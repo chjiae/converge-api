@@ -13,12 +13,13 @@ import java.util.Set;
  */
 public class ConvergeTenantLineHandler implements TenantLineHandler {
 
-    /** 不需要租户过滤的表（平台级数据表） */
+    /** 不需要租户过滤的表（平台级数据表或无 tenant_id 列的关联表） */
     private static final Set<String> IGNORE_TABLES = Set.of(
         "tenant",              // 租户表本身
         "tenant_application",  // 租户申请（无 tenant_id）
         "permission",          // 权限表（全局共享）
-        "audit_log"            // 审计日志（查询时需跨租户）
+        "audit_log",           // 审计日志（查询时需跨租户）
+        "user_role"            // 用户角色关联表（无 tenant_id，通过 user/role 表隔离）
     );
 
     @Override

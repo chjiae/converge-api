@@ -214,6 +214,9 @@ public class AuthService {
         Long userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
         String username = jwtTokenProvider.getUsernameFromToken(refreshToken);
 
+        // 刷新令牌时忽略租户过滤，允许查询所有用户（包括超管和跨租户用户）
+        TenantContext.setIgnoreTenant(true);
+
         // 查询用户最新信息
         User user = userMapper.selectById(userId);
         if (user == null) {

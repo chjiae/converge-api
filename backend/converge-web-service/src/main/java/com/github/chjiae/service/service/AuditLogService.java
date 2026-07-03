@@ -55,16 +55,19 @@ public class AuditLogService {
 
         // 从 SecurityContext 获取当前用户信息
         UserPrincipal principal = getCurrentUser();
-        if (principal != null) {
-            auditLog.setUserId(principal.getUserId());
-            auditLog.setUsername(principal.getUsername());
-            auditLog.setTenantId(principal.getTenantId());
+        if (principal == null) {
+            // 未认证请求（如登录接口）无法记录 user_id，跳过审计日志
+            log.debug("审计日志跳过：无用户上下文，模块={}, 操作={}", module, action);
+            return;
         }
+
+        auditLog.setUserId(principal.getUserId());
+        auditLog.setUsername(principal.getUsername());
+        auditLog.setTenantId(principal.getTenantId());
 
         // audit_log 在忽略列表中，不受租户过滤影响，直接插入
         auditLogMapper.insert(auditLog);
-        log.info("审计日志已记录：模块={}, 操作={}, 目标={}, 用户={}", module, action, target,
-                principal != null ? principal.getUsername() : "anonymous");
+        log.info("审计日志已记录：模块={}, 操作={}, 目标={}, 用户={}", module, action, target, principal.getUsername());
     }
 
     /**

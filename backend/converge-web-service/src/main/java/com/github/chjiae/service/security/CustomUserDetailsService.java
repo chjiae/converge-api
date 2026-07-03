@@ -7,6 +7,7 @@ import com.github.chjiae.service.entity.UserRole;
 import com.github.chjiae.service.mapper.RoleMapper;
 import com.github.chjiae.service.mapper.UserMapper;
 import com.github.chjiae.service.mapper.UserRoleMapper;
+import com.github.chjiae.service.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -45,41 +46,48 @@ public class CustomUserDetailsService implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 1. 根据用户名查询用户（超管 tenantId 为 null，租户用户由多租户拦截器自动过滤）
-        User user = userMapper.selectOne(
-                new LambdaQueryWrapper<User>().eq(User::getUsername, username)
-        );
-        if (user == null) {
-            log.warn("用户不存在: {}", username);
-            throw new UsernameNotFoundException("用户不存在: " + username);
+        // 认证时忽略租户过滤，允许查询所有用户及其角色（包括超管和跨租户用户）
+        TenantContext.setIgnoreTenant(true);
+        try {
+            // 1. 根据用户名查询用户（超管 tenantId 为 null，租户用户由多租户拦截器自动过滤）
+            User user = userMapper.selectOne(
+                    new LambdaQueryWrapper<User>().eq(User::getUsername, username)
+            );
+            if (user == null) {
+                log.warn("用户不存在: {}", username);
+                throw new UsernameNotFoundException("用户不存在: " + username);
+            }
+
+            // 2. 查询用户的角色关联关系
+            List<UserRole> userRoles = userRoleMapper.selectList(
+                    new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, user.getId())
+            );
+
+            // 3. 根据角色 ID 列表查询角色编码
+            List<String> roleCodes = List.of();
+            if (!userRoles.isEmpty()) {
+                List<Long> roleIds = userRoles.stream()
+                        .map(UserRole::getRoleId)
+                        .collect(Collectors.toList());
+                List<Role> roles = roleMapper.selectBatchIds(roleIds);
+                roleCodes = roles.stream()
+                        .map(Role::getCode)
+                        .collect(Collectors.toList());
+            }
+
+            // 4. 构建并返回 UserPrincipal
+            return new UserPrincipal(
+                    user.getId(),
+                    user.getTenantId(),
+                    user.getUsername(),
+                    user.getPasswordHash(),
+                    user.getUserType(),
+                    user.getStatus(),
+                    roleCodes
+            );
+        } finally {
+            // 重置租户忽略标志，确保后续业务查询正常使用多租户过滤
+            TenantContext.setIgnoreTenant(false);
         }
-
-        // 2. 查询用户的角色关联关系
-        List<UserRole> userRoles = userRoleMapper.selectList(
-                new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, user.getId())
-        );
-
-        // 3. 根据角色 ID 列表查询角色编码
-        List<String> roleCodes = List.of();
-        if (!userRoles.isEmpty()) {
-            List<Long> roleIds = userRoles.stream()
-                    .map(UserRole::getRoleId)
-                    .collect(Collectors.toList());
-            List<Role> roles = roleMapper.selectBatchIds(roleIds);
-            roleCodes = roles.stream()
-                    .map(Role::getCode)
-                    .collect(Collectors.toList());
-        }
-
-        // 4. 构建并返回 UserPrincipal
-        return new UserPrincipal(
-                user.getId(),
-                user.getTenantId(),
-                user.getUsername(),
-                user.getPasswordHash(),
-                user.getUserType(),
-                user.getStatus(),
-                roleCodes
-        );
     }
 }
