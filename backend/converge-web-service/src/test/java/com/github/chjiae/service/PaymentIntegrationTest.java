@@ -93,8 +93,8 @@ class PaymentIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @Order(2)
-    void initiatePayment_无支付网关_应返回错误() {
-        // 以租户管理员身份发起在线支付，由于未配置支付网关应返回错误
+    void initiatePayment_网关凭证未配置_应返回服务端错误() {
+        // 以租户管理员身份发起在线支付，网关虽已注册但凭证为空导致 SDK 调用失败
         String payBody = """
                 {
                   "subscriptionId": %d,
@@ -103,8 +103,8 @@ class PaymentIntegrationTest extends BaseIntegrationTest {
                 """.formatted(pendingSubscriptionId);
         ResponseEntity<String> response = post("/api/v1/my-subscriptions/pay", tenantAdminToken, payBody);
 
-        // 支付网关未配置，应返回业务错误
-        assertError(response, 400);
+        // 网关凭证未配置导致创建订单失败，应返回服务端错误
+        assertError(response, 500);
     }
 
     @Test

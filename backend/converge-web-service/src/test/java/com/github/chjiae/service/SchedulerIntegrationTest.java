@@ -6,6 +6,7 @@ import com.github.chjiae.service.entity.Tenant;
 import com.github.chjiae.service.mapper.SubscriptionMapper;
 import com.github.chjiae.service.mapper.TenantMapper;
 import com.github.chjiae.service.scheduler.TenantExpiryScheduler;
+import com.github.chjiae.service.tenant.TenantContext;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -111,25 +112,36 @@ class SchedulerIntegrationTest extends BaseIntegrationTest {
         ResponseEntity<String> payResp = put("/api/v1/subscriptions/" + subId + "/pay", adminToken, "{}");
         assertSuccess(payResp);
 
-        // 手动将订阅的 endDate 设为过去，模拟到期场景
-        Subscription subscription = subscriptionMapper.selectById(subId);
-        subscription.setEndDate(LocalDate.now().minusDays(1));
-        subscriptionMapper.updateById(subscription);
+        // 手动将订阅的 endDate 设为过去，模拟到期场景（跳过租户过滤）
+        try {
+            TenantContext.setIgnoreTenant(true);
+            Subscription subscription = subscriptionMapper.selectById(subId);
+            subscription.setEndDate(LocalDate.now().minusDays(1));
+            subscriptionMapper.updateById(subscription);
+        } finally {
+            TenantContext.setIgnoreTenant(false);
+        }
         expiredSubscriptionId = subId;
     }
 
     @Test
     @Order(2)
     void setup_设置租户到期时间() {
-        // 将即将到期租户的 expiredAt 设为 7 天后（触发 WARNING_DAYS 阈值）
-        Tenant expiringTenant = tenantMapper.selectById(expiringTenantId);
-        expiringTenant.setExpiredAt(LocalDateTime.now().plusDays(7));
-        tenantMapper.updateById(expiringTenant);
+        try {
+            TenantContext.setIgnoreTenant(true);
 
-        // 将已过期租户的 expiredAt 设为过去（已到期）
-        Tenant expiredTenant = tenantMapper.selectById(expiredTenantId);
-        expiredTenant.setExpiredAt(LocalDateTime.now().minusDays(1));
-        tenantMapper.updateById(expiredTenant);
+            // 将即将到期租户的 expiredAt 设为 7 天后（加 1 小时缓冲，避免时间差导致天数计算为 6）
+            Tenant expiringTenant = tenantMapper.selectById(expiringTenantId);
+            expiringTenant.setExpiredAt(LocalDateTime.now().plusDays(7).plusHours(1));
+            tenantMapper.updateById(expiringTenant);
+
+            // 将已过期租户的 expiredAt 设为过去（已到期）
+            Tenant expiredTenant = tenantMapper.selectById(expiredTenantId);
+            expiredTenant.setExpiredAt(LocalDateTime.now().minusDays(1));
+            tenantMapper.updateById(expiredTenant);
+        } finally {
+            TenantContext.setIgnoreTenant(false);
+        }
     }
 
     @Test
