@@ -10,6 +10,7 @@ import com.github.chjiae.service.entity.*;
 import com.github.chjiae.service.mapper.*;
 import com.github.chjiae.service.security.JwtTokenProvider;
 import com.github.chjiae.service.security.UserPrincipal;
+import com.github.chjiae.service.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -58,6 +59,9 @@ public class AuthService {
      */
     public TokenResponse login(LoginRequest request) {
         log.info("用户登录请求，用户名: {}", request.getUsername());
+
+        // 登录时忽略租户过滤，允许查询所有用户（包括超管和租户用户）
+        TenantContext.setIgnoreTenant(true);
 
         // 1. 根据用户名查找用户
         User user = userMapper.selectOne(
@@ -112,6 +116,9 @@ public class AuthService {
      */
     public TokenResponse register(RegisterRequest request) {
         log.info("用户注册请求，用户名: {}，租户编码: {}", request.getUsername(), request.getTenantCode());
+
+        // 注册时忽略租户过滤，允许跨租户查询用户和角色
+        TenantContext.setIgnoreTenant(true);
 
         // 1. 根据 tenantCode 查找租户（tenant 表已在忽略列表中，无需特殊处理）
         Tenant tenant = tenantMapper.selectOne(

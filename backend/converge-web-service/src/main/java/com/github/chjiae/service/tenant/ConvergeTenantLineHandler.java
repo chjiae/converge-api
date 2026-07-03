@@ -37,6 +37,10 @@ public class ConvergeTenantLineHandler implements TenantLineHandler {
 
     @Override
     public boolean ignoreTable(String tableName) {
+        // 如果当前上下文标记为忽略租户过滤，则跳过所有表的租户条件注入
+        if (TenantContext.isIgnoreTenant()) {
+            return true;
+        }
         return IGNORE_TABLES.contains(tableName);
     }
 }
