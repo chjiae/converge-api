@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { useNavigate, Navigate, Link } from "react-router-dom"
 import { Eye, EyeOff, ArrowRight, Loader2, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,8 +44,13 @@ export default function RegisterPage() {
     password: false,
     confirm: false,
   })
-  const { register } = useAuth()
+  const { register, isAuthenticated } = useAuth()
   const navigate = useNavigate()
+
+  // 已登录用户直接重定向到控制台
+  if (isAuthenticated) {
+    return <Navigate to="/console" replace />
+  }
 
   const { checks, score } = useMemo(() => getPasswordStrength(password), [password])
   const passwordsMatch = password === confirmPassword

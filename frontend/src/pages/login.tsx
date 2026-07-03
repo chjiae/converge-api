@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { useNavigate, Navigate, Link } from "react-router-dom"
 import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,8 +14,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [touched, setTouched] = useState({ email: false, password: false })
-  const { login } = useAuth()
+  const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
+
+  // 已登录用户直接重定向到控制台
+  if (isAuthenticated) {
+    return <Navigate to="/console" replace />
+  }
 
   const emailError = touched.email && !email.includes("@")
   const passwordError = touched.password && password.length < 1
