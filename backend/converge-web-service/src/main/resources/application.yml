@@ -22,6 +22,11 @@ spring:
       host: localhost
       port: 6379
 
+jwt:
+  secret-key: ConvergeApiSecretKey2026ThisIsAVeryLongSecretKeyForHS256Algorithm
+  access-token-expiration: 7200000    # 访问令牌有效期 2 小时（毫秒）
+  refresh-token-expiration: 604800000 # 刷新令牌有效期 7 天（毫秒）
+
 mybatis-plus:
   global-config:
     db-config:
