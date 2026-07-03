@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { ModeToggle } from '@/components/mode-toggle'
+import NotificationBell from '@/components/notification-bell'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -137,6 +138,7 @@ export default function TopBar({ onMenuClick, collapsed, onToggleCollapse }: Top
       {/* 右侧：主题切换 + 用户下拉菜单 */}
       <div className="flex items-center gap-2">
         <ModeToggle />
+        <NotificationBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
