@@ -41,3 +41,19 @@ logging:
   level:
     com.github.chjiae: DEBUG
     org.springframework.web: INFO
+
+# 支付网关配置（密钥使用环境变量占位符，禁止硬编码）
+payment:
+  alipay:
+    app-id: ${ALIPAY_APP_ID:}
+    private-key: ${ALIPAY_PRIVATE_KEY:}
+    alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
+    notify-url: ${ALIPAY_NOTIFY_URL:http://localhost:8080/api/v1/payment/alipay/notify}
+    gateway: ${ALIPAY_GATEWAY:https://openapi-sandbox.dl.alipaydev.com/gateway.do}
+  wechat:
+    app-id: ${WECHAT_APP_ID:}
+    mch-id: ${WECHAT_MCH_ID:}
+    mch-serial-no: ${WECHAT_MCH_SERIAL_NO:}
+    api-v3-key: ${WECHAT_API_V3_KEY:}
+    private-key-path: ${WECHAT_PRIVATE_KEY_PATH:}
+    notify-url: ${WECHAT_NOTIFY_URL:http://localhost:8080/api/v1/payment/wechat/notify}
