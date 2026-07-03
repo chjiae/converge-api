@@ -34,6 +34,13 @@
             <version>${mybatis-plus.version}</version>
         </dependency>
 
+        <!-- MyBatis-Plus JSqlParser 插件（租户拦截器、分页拦截器等依赖此模块） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+
         <!-- MySQL Driver -->
         <dependency>
             <groupId>com.mysql</groupId>
