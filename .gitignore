@@ -1,0 +1,39 @@
+# Maven / Java
+target/
+*.class
+*.jar
+*.war
+*.log
+*.tmp
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+dependency-reduced-pom.xml
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+
+# Eclipse
+.settings/
+.project
+.classpath
+*.prefs
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Frontend
+node_modules/
+dist/
+*.local
+
+# Logs
+logs/
+*.log
