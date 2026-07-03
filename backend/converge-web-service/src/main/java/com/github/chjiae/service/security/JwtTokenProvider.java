@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * JWT 令牌提供者，负责生成和验证 JWT Token。
@@ -45,6 +46,7 @@ public class JwtTokenProvider {
         Date expiryDate = new Date(now.getTime() + accessTokenExpiration);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(principal.getUsername())
                 .claim("userId", principal.getUserId())
                 .claim("tenantId", principal.getTenantId())
@@ -67,6 +69,7 @@ public class JwtTokenProvider {
         Date expiryDate = new Date(now.getTime() + refreshTokenExpiration);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(principal.getUsername())
                 .claim("userId", principal.getUserId())
                 .claim("tenantId", principal.getTenantId())
@@ -139,6 +142,33 @@ public class JwtTokenProvider {
     public String getUserTypeFromToken(String token) {
         Claims claims = parseClaims(token);
         return claims.get("userType", String.class);
+    }
+
+    /**
+     * 从令牌中解析唯一标识（jti）
+     *
+     * @param token JWT 令牌字符串
+     * @return jti 唯一标识
+     */
+    public String getJtiFromToken(String token) {
+        Claims claims = parseClaims(token);
+        return claims.getId();
+    }
+
+    /**
+     * 获取令牌的剩余有效期（毫秒）
+     *
+     * @param token JWT 令牌字符串
+     * @return 剩余毫秒数，已过期返回 0
+     */
+    public long getRemainingExpiration(String token) {
+        try {
+            Claims claims = parseClaims(token);
+            long remaining = claims.getExpiration().getTime() - System.currentTimeMillis();
+            return Math.max(0, remaining);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /**

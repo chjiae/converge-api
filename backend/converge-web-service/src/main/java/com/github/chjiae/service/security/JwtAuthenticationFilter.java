@@ -30,6 +30,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /** JWT 令牌提供者 */
     private final JwtTokenProvider jwtTokenProvider;
 
+    /** Token 黑名单服务 */
+    private final TokenBlacklistService tokenBlacklistService;
+
     /** 自定义用户详情服务 */
     private final CustomUserDetailsService userDetailsService;
 
@@ -49,19 +52,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             // 2. 验证 token 有效性
             if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
-                // 3. 从 token 解析用户名
+                // 3. 检查 Token 是否在黑名单中
+                String jti = jwtTokenProvider.getJtiFromToken(token);
+                if (jti != null && tokenBlacklistService.isBlacklisted(jti)) {
+                    log.warn("JWT 认证拒绝，Token 已在黑名单中，jti: {}", jti);
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
+                // 4. 从 token 解析用户名
                 String username = jwtTokenProvider.getUsernameFromToken(token);
 
-                // 4. 加载用户详情（包含角色权限）
+                // 5. 加载用户详情（包含角色权限）
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                // 5. 创建认证令牌并设置到 SecurityContextHolder
+                // 6. 创建认证令牌并设置到 SecurityContextHolder
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                // 6. 将 tenantId 写入 TenantContext，实现租户数据隔离
+                // 7. 将 tenantId 写入 TenantContext，实现租户数据隔离
                 Long tenantId = jwtTokenProvider.getTenantIdFromToken(token);
                 if (tenantId != null) {
                     TenantContext.setTenantId(tenantId);
@@ -73,7 +84,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             log.error("JWT 认证过程异常: {}", ex.getMessage());
         }
 
-        // 7. 继续过滤器链（无论认证成功与否，由 Security 配置决定是否拦截）
+        // 8. 继续过滤器链（无论认证成功与否，由 Security 配置决定是否拦截）
         filterChain.doFilter(request, response);
     }
 

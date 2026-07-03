@@ -5,7 +5,10 @@ import com.github.chjiae.service.annotation.Auditable;
 import com.github.chjiae.service.dto.auth.LoginRequest;
 import com.github.chjiae.service.dto.auth.RegisterRequest;
 import com.github.chjiae.service.dto.auth.TokenResponse;
+import com.github.chjiae.service.security.JwtTokenProvider;
+import com.github.chjiae.service.security.TokenBlacklistService;
 import com.github.chjiae.service.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +27,12 @@ public class AuthController {
 
     /** 认证服务 */
     private final AuthService authService;
+
+    /** JWT 令牌提供者 */
+    private final JwtTokenProvider jwtTokenProvider;
+
+    /** Token 黑名单服务 */
+    private final TokenBlacklistService tokenBlacklistService;
 
     /**
      * 用户登录
@@ -68,14 +77,29 @@ public class AuthController {
 
     /**
      * 用户登出
-     * 当前无状态 JWT，登出仅需返回成功。
-     * 后续可配合 Redis 黑名单实现真正的登出。
+     * 将当前 Access Token 加入 Redis 黑名单，使其在剩余有效期内无法继续使用。
      *
+     * @param request HTTP 请求（用于提取 Authorization 头中的 Token）
      * @return 成功响应
      */
     @PostMapping("/logout")
-    public Result<Void> logout() {
+    public Result<Void> logout(HttpServletRequest request) {
         log.info("登出接口调用");
+
+        // 从请求头提取 Token
+        String bearerToken = request.getHeader("Authorization");
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            String token = bearerToken.substring(7);
+            if (jwtTokenProvider.validateToken(token)) {
+                String jti = jwtTokenProvider.getJtiFromToken(token);
+                long remaining = jwtTokenProvider.getRemainingExpiration(token);
+                if (jti != null && remaining > 0) {
+                    tokenBlacklistService.blacklist(jti, remaining);
+                    log.info("Access Token 已加入黑名单，jti: {}，剩余有效期: {} 毫秒", jti, remaining);
+                }
+            }
+        }
+
         return Result.ok();
     }
 }
