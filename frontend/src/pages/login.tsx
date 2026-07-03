@@ -8,12 +8,12 @@ import { useAuth } from "@/contexts/auth-context"
 import { ModeToggle } from "@/components/mode-toggle"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
-  const [touched, setTouched] = useState({ email: false, password: false })
+  const [touched, setTouched] = useState({ username: false, password: false })
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
@@ -22,26 +22,26 @@ export default function LoginPage() {
     return <Navigate to="/console" replace />
   }
 
-  const emailError = touched.email && !email.includes("@")
+  const usernameError = touched.username && username.length === 0
   const passwordError = touched.password && password.length < 1
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
 
-    if (!email || !password) {
+    if (!username || !password) {
       setError("请填写所有必填字段")
       return
     }
 
     setIsLoading(true)
     try {
-      await login(email, password)
+      await login(username, password)
       setIsLoading(false)
       navigate("/console")
     } catch {
       setIsLoading(false)
-      setError("邮箱或密码不正确")
+      setError("用户名或密码不正确")
     }
   }
 
@@ -146,21 +146,21 @@ export default function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">邮箱</Label>
+                <Label htmlFor="username">用户名</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onBlur={() => setTouched((t) => ({ ...t, email: true }))}
-                  className={emailError ? "border-destructive focus-visible:ring-destructive" : ""}
-                  autoComplete="email"
+                  id="username"
+                  type="text"
+                  placeholder="输入用户名"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, username: true }))}
+                  className={usernameError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  autoComplete="username"
                   disabled={isLoading}
                 />
-                {emailError && (
+                {usernameError && (
                   <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
-                    请输入有效的邮箱地址
+                    请输入用户名
                   </p>
                 )}
               </div>

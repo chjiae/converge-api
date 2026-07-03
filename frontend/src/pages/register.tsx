@@ -31,6 +31,7 @@ const strengthColors = [
 
 export default function RegisterPage() {
   const [name, setName] = useState("")
+  const [tenantCode, setTenantCode] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -40,6 +41,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("")
   const [touched, setTouched] = useState({
     name: false,
+    tenantCode: false,
     email: false,
     password: false,
     confirm: false,
@@ -56,6 +58,7 @@ export default function RegisterPage() {
   const passwordsMatch = password === confirmPassword
 
   const nameError = touched.name && name.trim().length === 0
+  const tenantCodeError = touched.tenantCode && tenantCode.trim().length === 0
   const emailError = touched.email && !email.includes("@")
   const passwordError = touched.password && password.length < 8
   const confirmError = touched.confirm && confirmPassword.length > 0 && !passwordsMatch
@@ -64,7 +67,7 @@ export default function RegisterPage() {
     e.preventDefault()
     setError("")
 
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name || !tenantCode || !email || !password || !confirmPassword) {
       setError("请填写所有必填字段")
       return
     }
@@ -79,8 +82,7 @@ export default function RegisterPage() {
 
     setIsLoading(true)
     try {
-      // 注册页面无租户编码输入框，传递空字符串由后端处理
-      await register(name, email, password, "")
+      await register(name, email, password, tenantCode)
       setIsLoading(false)
       navigate("/console")
     } catch {
@@ -126,7 +128,7 @@ export default function RegisterPage() {
             <span className="text-[oklch(0.72_0.15_260)]">开发之旅</span>
           </h1>
           <p className="text-[oklch(0.65_0.02_260)] text-lg max-w-md leading-relaxed">
-            注册即可获得免费额度，体验高性能 API 聚合服务。无需信用卡，即刻开始。
+            填写租户编码，加入你的团队。体验高性能 API 聚合服务，即刻开始。
           </p>
         </div>
 
@@ -210,6 +212,25 @@ export default function RegisterPage() {
                 {nameError && (
                   <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
                     请输入用户名
+                  </p>
+                )}
+              </div>
+
+              {/* 租户编码 */}
+              <div className="space-y-2">
+                <Label htmlFor="tenantCode">租户编码</Label>
+                <Input
+                  id="tenantCode"
+                  placeholder="输入你的租户编码"
+                  value={tenantCode}
+                  onChange={(e) => setTenantCode(e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, tenantCode: true }))}
+                  className={tenantCodeError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  disabled={isLoading}
+                />
+                {tenantCodeError && (
+                  <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                    请输入租户编码
                   </p>
                 )}
               </div>
