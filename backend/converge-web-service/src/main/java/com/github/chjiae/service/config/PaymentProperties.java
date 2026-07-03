@@ -32,8 +32,8 @@ public class PaymentProperties {
         private String alipayPublicKey;
         /** 支付结果异步通知地址 */
         private String notifyUrl;
-        /** 支付宝网关地址（默认使用正式网关） */
-        private String gateway = "https://openapi.alipay.com/gateway.do";
+        /** 支付宝网关地址（默认使用沙箱网关，生产环境通过环境变量切换） */
+        private String gateway = "https://openapi-sandbox.dl.alipaydev.com/gateway.do";
     }
 
     /**
