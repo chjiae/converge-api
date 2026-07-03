@@ -19,7 +19,8 @@ public class ConvergeTenantLineHandler implements TenantLineHandler {
         "tenant_application",  // 租户申请（无 tenant_id）
         "permission",          // 权限表（全局共享）
         "audit_log",           // 审计日志（查询时需跨租户）
-        "user_role"            // 用户角色关联表（无 tenant_id，通过 user/role 表隔离）
+        "user_role",           // 用户角色关联表（无 tenant_id，通过 user/role 表隔离）
+        "card_key"             // 卡密表（生成时不关联租户，兑换时手动设置 tenant_id）
     );
 
     @Override
