@@ -5,6 +5,9 @@ import com.github.chjiae.common.result.Result;
 import com.github.chjiae.service.dto.subscription.CreateSubscriptionRequest;
 import com.github.chjiae.service.dto.subscription.SubscriptionResponse;
 import com.github.chjiae.service.security.UserPrincipal;
+import com.github.chjiae.service.dto.payment.PaymentInitiateRequest;
+import com.github.chjiae.service.dto.payment.PaymentInitiateResponse;
+import com.github.chjiae.service.service.PaymentService;
 import com.github.chjiae.service.service.SubscriptionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,9 @@ public class SubscriptionController {
 
     /** 订阅管理服务 */
     private final SubscriptionService subscriptionService;
+
+    /** 支付编排服务 */
+    private final PaymentService paymentService;
 
     /**
      * 所有订阅列表（分页），仅超管/运营可访问
@@ -101,6 +107,20 @@ public class SubscriptionController {
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         log.info("发起续费接口调用，租户 ID: {}，操作人: {}", principal.getTenantId(), principal.getUserId());
         SubscriptionResponse response = subscriptionService.initiateRenewal(request);
+        return Result.ok(response);
+    }
+
+    /**
+     * 发起在线支付（租户管理员）
+     *
+     * @param request 发起支付请求参数
+     * @return 支付链接信息
+     */
+    @PostMapping("/my-subscriptions/pay")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PaymentInitiateResponse> initiatePayment(@Valid @RequestBody PaymentInitiateRequest request) {
+        log.info("发起在线支付接口调用，订阅 ID: {}，支付方式: {}", request.getSubscriptionId(), request.getPaymentMethod());
+        PaymentInitiateResponse response = paymentService.initiatePayment(request);
         return Result.ok(response);
     }
 }

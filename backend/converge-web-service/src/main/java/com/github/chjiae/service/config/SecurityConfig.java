@@ -71,6 +71,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/applications/**").permitAll()
                 // 健康检查
                 .requestMatchers("/api/health").permitAll()
+                // 支付平台异步回调（公开，不携带 JWT）
+                .requestMatchers("/api/v1/payment/*/notify").permitAll()
                 // Spring 默认错误端点
                 .requestMatchers("/error").permitAll()
                 // 其他端点需要认证
