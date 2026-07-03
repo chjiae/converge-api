@@ -1,6 +1,7 @@
 package com.github.chjiae.service.controller;
 
 import com.github.chjiae.common.result.Result;
+import com.github.chjiae.service.annotation.Auditable;
 import com.github.chjiae.service.dto.auth.LoginRequest;
 import com.github.chjiae.service.dto.auth.RegisterRequest;
 import com.github.chjiae.service.dto.auth.TokenResponse;
@@ -30,6 +31,7 @@ public class AuthController {
      * @param request 登录请求参数
      * @return 令牌响应
      */
+    @Auditable(module = "auth", action = "login")
     @PostMapping("/login")
     public Result<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         log.info("登录接口调用，用户名: {}", request.getUsername());

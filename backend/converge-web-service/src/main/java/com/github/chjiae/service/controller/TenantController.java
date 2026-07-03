@@ -2,6 +2,7 @@ package com.github.chjiae.service.controller;
 
 import com.github.chjiae.common.result.PageResult;
 import com.github.chjiae.common.result.Result;
+import com.github.chjiae.service.annotation.Auditable;
 import com.github.chjiae.service.dto.tenant.CreateTenantRequest;
 import com.github.chjiae.service.dto.tenant.TenantResponse;
 import com.github.chjiae.service.dto.tenant.UpdateTenantRequest;
@@ -32,6 +33,7 @@ public class TenantController {
      * @param request 创建租户请求参数
      * @return 创建的租户信息
      */
+    @Auditable(module = "tenant", action = "create")
     @PostMapping
     public Result<TenantResponse> createTenant(@Valid @RequestBody CreateTenantRequest request) {
         log.info("创建租户接口调用，编码: {}", request.getCode());
