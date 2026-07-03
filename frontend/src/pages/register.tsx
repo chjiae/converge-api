@@ -78,12 +78,13 @@ export default function RegisterPage() {
     }
 
     setIsLoading(true)
-    const success = await register(name, email, password)
-    setIsLoading(false)
-
-    if (success) {
+    try {
+      // 注册页面无租户编码输入框，传递空字符串由后端处理
+      await register(name, email, password, "")
+      setIsLoading(false)
       navigate("/console")
-    } else {
+    } catch {
+      setIsLoading(false)
       setError("注册失败，请稍后重试")
     }
   }

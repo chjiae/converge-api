@@ -35,12 +35,12 @@ export default function LoginPage() {
     }
 
     setIsLoading(true)
-    const success = await login(email, password)
-    setIsLoading(false)
-
-    if (success) {
+    try {
+      await login(email, password)
+      setIsLoading(false)
       navigate("/console")
-    } else {
+    } catch {
+      setIsLoading(false)
       setError("邮箱或密码不正确")
     }
   }
