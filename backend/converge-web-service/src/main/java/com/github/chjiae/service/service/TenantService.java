@@ -18,6 +18,7 @@ import com.github.chjiae.service.mapper.RoleMapper;
 import com.github.chjiae.service.mapper.TenantMapper;
 import com.github.chjiae.service.mapper.UserMapper;
 import com.github.chjiae.service.mapper.UserRoleMapper;
+import com.github.chjiae.service.cache.TenantCacheService;
 import com.github.chjiae.service.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +53,9 @@ public class TenantService {
 
     /** 密码编码器 */
     private final PasswordEncoder passwordEncoder;
+
+    /** 租户状态缓存服务 */
+    private final TenantCacheService tenantCacheService;
 
     /**
      * 创建租户（事务方法）
@@ -200,6 +204,8 @@ public class TenantService {
         tenantMapper.updateById(tenant);
 
         log.info("租户更新成功，ID: {}", id);
+        // 清除租户缓存，确保下次查询获取最新状态
+        tenantCacheService.evictTenantCache(id);
         return toTenantResponse(tenant);
     }
 
@@ -225,6 +231,8 @@ public class TenantService {
         tenantMapper.updateById(tenant);
 
         log.info("租户已软删除，ID: {}", id);
+        // 清除租户缓存，确保下次查询获取最新状态
+        tenantCacheService.evictTenantCache(id);
     }
 
     /**
@@ -249,6 +257,8 @@ public class TenantService {
         tenantMapper.updateById(tenant);
 
         log.info("租户已启用，ID: {}", id);
+        // 清除租户缓存，确保下次查询获取最新状态
+        tenantCacheService.evictTenantCache(id);
     }
 
     /**
@@ -273,6 +283,8 @@ public class TenantService {
         tenantMapper.updateById(tenant);
 
         log.info("租户已停用，ID: {}", id);
+        // 清除租户缓存，确保下次查询获取最新状态
+        tenantCacheService.evictTenantCache(id);
     }
 
     /**
