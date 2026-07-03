@@ -38,6 +38,15 @@ public class TenantApplication implements Serializable {
     /** 用途描述 */
     private String description;
 
+    /** 管理员用户名（审核通过时用于创建管理员账号） */
+    private String adminUsername;
+
+    /** 管理员邮箱（审核通过时用于创建管理员账号） */
+    private String adminEmail;
+
+    /** 管理员密码（审核通过时用于创建管理员账号） */
+    private String adminPassword;
+
     /** 申请类型：REGISTER（注册充值）/ TRIAL（申请试用） */
     private ApplicationType applicationType;
 
