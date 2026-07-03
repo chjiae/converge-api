@@ -23,9 +23,16 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // 手动拆分第三方库，优化缓存和加载性能
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-ui': ['lucide-react', 'sonner'],
+        // Vite 8 (Rolldown) 要求 manualChunks 为函数形式
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react-dom') || id.includes('react-router')) {
+              return 'vendor-react'
+            }
+            if (id.includes('lucide-react') || id.includes('sonner')) {
+              return 'vendor-ui'
+            }
+          }
         },
       },
     },
