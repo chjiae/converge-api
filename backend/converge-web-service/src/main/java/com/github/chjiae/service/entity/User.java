@@ -13,7 +13,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("user")
+@TableName("\"user\"")
 public class User extends BaseEntity {
 
     /** 用户名（租户内唯一，超管全局唯一） */

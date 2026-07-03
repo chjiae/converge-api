@@ -27,7 +27,6 @@
         <java.version>25</java.version>
         <lombok.version>1.18.38</lombok.version>
         <mybatis-plus.version>3.5.12</mybatis-plus.version>
-        <mysql.version>9.1.0</mysql.version>
         <flyway.version>11.1.0</flyway.version>
         <jjwt.version>0.12.6</jjwt.version>
     </properties>
