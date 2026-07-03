@@ -18,8 +18,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * JWT 认证过滤器，从请求头解析 JWT 并设置 SecurityContext。
- * 同时将租户 ID 写入 TenantContext 以实现数据隔离。
+ * JWT 认证过滤器，优先从 HttpOnly Cookie 解析 JWT，向后兼容 Authorization Bearer 头。
+ * 解析成功后设置 SecurityContext，同时将租户 ID 写入 TenantContext 以实现数据隔离。
  * 如果 token 无效或缺失，直接放行（由后续的 Security 配置决定是否拒绝）。
  */
 @Slf4j
@@ -47,7 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                      FilterChain filterChain) throws ServletException, IOException {
         try {
-            // 1. 从 Authorization header 获取 Bearer token
+            // 1. 优先从 Cookie 提取 access_token，向后兼容 Authorization Bearer 头
             String token = extractTokenFromRequest(request);
 
             // 2. 验证 token 有效性
@@ -89,12 +89,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 从请求的 Authorization 头中提取 Bearer Token
+     * 从请求中提取 JWT Token
+     * 优先从 HttpOnly Cookie 读取，向后兼容 Authorization Bearer 头
      *
      * @param request HTTP 请求
      * @return Token 字符串，如果不存在则返回 null
      */
     private String extractTokenFromRequest(HttpServletRequest request) {
+        // 优先从 Cookie 读取（HttpOnly，更安全）
+        if (request.getCookies() != null) {
+            for (jakarta.servlet.http.Cookie cookie : request.getCookies()) {
+                if ("access_token".equals(cookie.getName()) && StringUtils.hasText(cookie.getValue())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        // 向后兼容：从 Authorization Bearer 头读取（集成测试使用）
         String bearerToken = request.getHeader("Authorization");
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7);

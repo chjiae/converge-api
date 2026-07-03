@@ -57,3 +57,10 @@ payment:
     api-v3-key: ${WECHAT_API_V3_KEY:}
     private-key-path: ${WECHAT_PRIVATE_KEY_PATH:}
     notify-url: ${WECHAT_NOTIFY_URL:http://localhost:8080/api/v1/payment/wechat/notify}
+
+# 认证 Cookie 配置
+auth:
+  cookie:
+    secure: ${AUTH_COOKIE_SECURE:false}
+    same-site: ${AUTH_COOKIE_SAME_SITE:Strict}
+    domain: ${AUTH_COOKIE_DOMAIN:}
