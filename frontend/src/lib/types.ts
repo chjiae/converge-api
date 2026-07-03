@@ -143,6 +143,8 @@ export interface User {
   status: string
   /** 用户类型 */
   userType: string
+  /** 已分配的角色名称列表 */
+  roles: string[]
   /** 创建时间（ISO 日期时间格式） */
   createdAt: string
 }
