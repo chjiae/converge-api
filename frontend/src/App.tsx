@@ -26,6 +26,7 @@ import AuditLogPage from '@/pages/console/audit-log'
 import UserListPage from '@/pages/console/user-list'
 import RoleListPage from '@/pages/console/role-list'
 import MySubscriptionPage from '@/pages/console/my-subscription'
+import PaymentResultPage from '@/pages/payment/payment-result'
 import NotificationListPage from '@/pages/console/notification-list'
 import ProfilePage from '@/pages/console/profile'
 
@@ -75,6 +76,9 @@ function App() {
           <Route path="/console/notifications" element={<NotificationListPage />} />
           <Route path="/console/profile" element={<ProfilePage />} />
         </Route>
+
+        {/* 支付结果页面（独立布局，不在 ConsoleLayout 内） */}
+        <Route path="/console/payment-result" element={<PaymentResultPage />} />
       </Route>
 
       {/* ====== 兜底路由：404 ====== */}
