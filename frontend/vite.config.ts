@@ -19,4 +19,17 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // 手动拆分第三方库，优化缓存和加载性能
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['lucide-react', 'sonner'],
+        },
+      },
+    },
+    // chunk 大小警告阈值（单位 KB）
+    chunkSizeWarningLimit: 600,
+  },
 })
