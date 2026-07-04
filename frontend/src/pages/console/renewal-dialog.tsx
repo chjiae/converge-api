@@ -118,7 +118,8 @@ export default function RenewalDialog({
    * 处理套餐类型变更
    * 切换套餐时自动更新金额和结束日期
    */
-  const handlePlanTypeChange = useCallback((value: string) => {
+  const handlePlanTypeChange = useCallback((value: string | null) => {
+    if (value === null) return
     setPlanType(value)
     const plan = PLAN_OPTIONS.find((p) => p.value === value)
     if (plan) {
@@ -264,7 +265,9 @@ export default function RenewalDialog({
             <Label>支付方式</Label>
             <Select
               value={paymentMethod}
-              onValueChange={setPaymentMethod}
+              onValueChange={(value) => {
+                if (value !== null) setPaymentMethod(value)
+              }}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />

@@ -26,4 +26,8 @@ public class RegisterRequest {
     /** 租户编码（必填，要加入的租户编码） */
     @NotBlank(message = "租户编码不能为空")
     private String tenantCode;
+
+    /** 邮箱验证凭据（必填，验证邮箱成功后由后端签发） */
+    @NotBlank(message = "请先完成邮箱验证")
+    private String verificationToken;
 }

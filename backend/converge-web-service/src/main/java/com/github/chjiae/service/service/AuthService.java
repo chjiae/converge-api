@@ -46,6 +46,9 @@ public class AuthService {
     /** 密码编码器 */
     private final PasswordEncoder passwordEncoder;
 
+    /** 注册验证码服务 */
+    private final RegisterVerificationService registerVerificationService;
+
     /**
      * 用户登录
      * 1. 根据用户名查找用户
@@ -116,6 +119,9 @@ public class AuthService {
      */
     public TokenResponse register(RegisterRequest request) {
         log.info("用户注册请求，用户名: {}，租户编码: {}", request.getUsername(), request.getTenantCode());
+
+        // 注册入口是最终信任边界，必须在服务端强制校验邮箱验证凭据。
+        registerVerificationService.consumeRegistrationToken(request.getEmail(), request.getVerificationToken());
 
         // 注册时忽略租户过滤，允许跨租户查询用户和角色
         TenantContext.setIgnoreTenant(true);

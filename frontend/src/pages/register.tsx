@@ -1,11 +1,14 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { useNavigate, Navigate, Link } from "react-router-dom"
-import { Eye, EyeOff, ArrowRight, Loader2, Check, X } from "lucide-react"
+import { Eye, EyeOff, ArrowRight, Loader2, Check, X, Mail, ShieldCheck, RefreshCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/contexts/auth-context"
 import { ModeToggle } from "@/components/mode-toggle"
+import { get, post } from "@/lib/api-client"
+import { isApiError } from "@/lib/api-error"
+import type { CaptchaResponse, VerifyRegisterEmailCodeResponse } from "@/lib/types"
 
 function getPasswordStrength(password: string) {
   const checks = {
@@ -30,29 +33,35 @@ const strengthColors = [
 ]
 
 export default function RegisterPage() {
+  const [step, setStep] = useState<"email" | "account">("email")
   const [name, setName] = useState("")
   const [tenantCode, setTenantCode] = useState("")
   const [email, setEmail] = useState("")
+  const [captchaId, setCaptchaId] = useState("")
+  const [captchaImage, setCaptchaImage] = useState("")
+  const [captchaAnswer, setCaptchaAnswer] = useState("")
+  const [emailCode, setEmailCode] = useState("")
+  const [verificationToken, setVerificationToken] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isSendingCode, setIsSendingCode] = useState(false)
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const [error, setError] = useState("")
   const [touched, setTouched] = useState({
     name: false,
     tenantCode: false,
     email: false,
+    captcha: false,
+    emailCode: false,
     password: false,
     confirm: false,
   })
   const { register, isAuthenticated } = useAuth()
   const navigate = useNavigate()
-
-  // 已登录用户直接重定向到控制台
-  if (isAuthenticated) {
-    return <Navigate to="/console" replace />
-  }
 
   const { checks, score } = useMemo(() => getPasswordStrength(password), [password])
   const passwordsMatch = password === confirmPassword
@@ -60,13 +69,102 @@ export default function RegisterPage() {
   const nameError = touched.name && name.trim().length === 0
   const tenantCodeError = touched.tenantCode && tenantCode.trim().length === 0
   const emailError = touched.email && !email.includes("@")
+  const captchaError = touched.captcha && captchaAnswer.trim().length === 0
+  const emailCodeError = touched.emailCode && emailCode.trim().length === 0
   const passwordError = touched.password && password.length < 8
   const confirmError = touched.confirm && confirmPassword.length > 0 && !passwordsMatch
+
+  const loadCaptcha = useCallback(async () => {
+    try {
+      const response = await get<CaptchaResponse>("/api/v1/auth/captcha")
+      setCaptchaId(response.captchaId)
+      setCaptchaImage(response.imageBase64)
+      setCaptchaAnswer("")
+    } catch {
+      setError("人机验证码加载失败，请刷新页面重试")
+    }
+  }, [])
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
+
+  function getErrorMessage(error: unknown, fallback: string) {
+    if (isApiError(error)) return error.message
+    return fallback
+  }
+
+  async function handleSendEmailCode() {
+    setError("")
+    setTouched((t) => ({ ...t, email: true, captcha: true }))
+
+    if (!email.includes("@")) {
+      setError("请输入有效的邮箱地址")
+      return
+    }
+    if (!captchaId) {
+      await loadCaptcha()
+      setError("请输入图形验证码后再次发送邮箱验证码")
+      return
+    }
+    if (!captchaAnswer.trim()) {
+      setError("请输入人机验证码答案")
+      return
+    }
+
+    setIsSendingCode(true)
+    try {
+      await post("/api/v1/auth/register/email-code/send", {
+        email,
+        captchaId,
+        captchaAnswer,
+      })
+      setCooldown(60)
+      setError("验证码已发送，请查收邮箱")
+    } catch (err) {
+      setError(getErrorMessage(err, "验证码发送失败，请稍后重试"))
+      await loadCaptcha()
+    } finally {
+      setIsSendingCode(false)
+    }
+  }
+
+  async function handleVerifyEmailCode() {
+    setError("")
+    setTouched((t) => ({ ...t, email: true, emailCode: true }))
+
+    if (!email.includes("@") || !emailCode.trim()) {
+      setError("请输入邮箱和邮箱验证码")
+      return
+    }
+
+    setIsVerifyingCode(true)
+    try {
+      const response = await post<VerifyRegisterEmailCodeResponse>("/api/v1/auth/register/email-code/verify", {
+        email,
+        code: emailCode,
+      })
+      setVerificationToken(response.verificationToken)
+      setStep("account")
+      setError("")
+    } catch (err) {
+      setError(getErrorMessage(err, "邮箱验证码校验失败，请重新输入"))
+    } finally {
+      setIsVerifyingCode(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError("")
 
+    if (!verificationToken) {
+      setError("请先完成邮箱验证")
+      setStep("email")
+      return
+    }
     if (!name || !tenantCode || !email || !password || !confirmPassword) {
       setError("请填写所有必填字段")
       return
@@ -82,13 +180,18 @@ export default function RegisterPage() {
 
     setIsLoading(true)
     try {
-      await register(name, email, password, tenantCode)
+      await register(name, email, password, tenantCode, verificationToken)
       setIsLoading(false)
       navigate("/console")
-    } catch {
+    } catch (err) {
       setIsLoading(false)
-      setError("注册失败，请稍后重试")
+      setError(getErrorMessage(err, "注册失败，请稍后重试"))
     }
+  }
+
+  // 已登录用户直接重定向到控制台
+  if (isAuthenticated) {
+    return <Navigate to="/console" replace />
   }
 
   return (
@@ -196,6 +299,139 @@ export default function RegisterPage() {
                 </div>
               )}
 
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className={`h-1.5 flex-1 rounded-full ${step === "email" ? "bg-primary" : "bg-primary/35"}`} />
+                <span className={`h-1.5 flex-1 rounded-full ${step === "account" ? "bg-primary" : "bg-muted"}`} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">邮箱</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+                  className={emailError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  autoComplete="email"
+                  disabled={step === "account" || isLoading || isSendingCode || isVerifyingCode}
+                />
+                {emailError && (
+                  <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                    请输入有效的邮箱地址
+                  </p>
+                )}
+              </div>
+
+              {step === "email" && (
+                <>
+                  {captchaImage && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="captchaAnswer">人机验证</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={loadCaptcha}
+                          disabled={isSendingCode || isVerifyingCode}
+                        >
+                          <RefreshCcw className="h-3.5 w-3.5" />
+                          换一张
+                        </Button>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="flex h-10 min-w-[140px] items-center justify-center overflow-hidden rounded-md border bg-muted">
+                          <img
+                            src={captchaImage}
+                            alt="图形验证码"
+                            className="h-full w-full object-cover"
+                            draggable={false}
+                          />
+                        </div>
+                        <Input
+                          id="captchaAnswer"
+                          placeholder="输入图形验证码"
+                          value={captchaAnswer}
+                          onChange={(e) => setCaptchaAnswer(e.target.value)}
+                          onBlur={() => setTouched((t) => ({ ...t, captcha: true }))}
+                          className={captchaError ? "border-destructive focus-visible:ring-destructive" : ""}
+                          disabled={isSendingCode || isVerifyingCode}
+                        />
+                      </div>
+                      {captchaError && (
+                        <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                          请输入人机验证码
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-10"
+                    onClick={handleSendEmailCode}
+                    disabled={isSendingCode || isVerifyingCode || cooldown > 0}
+                  >
+                    {isSendingCode ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        发送中...
+                      </>
+                    ) : cooldown > 0 ? (
+                      `${cooldown} 秒后可重新发送`
+                    ) : (
+                      <>
+                        <Mail className="h-4 w-4" />
+                        发送邮箱验证码
+                      </>
+                    )}
+                  </Button>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="emailCode">邮箱验证码</Label>
+                    <Input
+                      id="emailCode"
+                      inputMode="numeric"
+                      placeholder="输入 6 位验证码"
+                      value={emailCode}
+                      onChange={(e) => setEmailCode(e.target.value)}
+                      onBlur={() => setTouched((t) => ({ ...t, emailCode: true }))}
+                      className={emailCodeError ? "border-destructive focus-visible:ring-destructive" : ""}
+                      disabled={isSendingCode || isVerifyingCode}
+                    />
+                    {emailCodeError && (
+                      <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                        请输入邮箱验证码
+                      </p>
+                    )}
+                  </div>
+
+                  <Button
+                    type="button"
+                    className="w-full h-10"
+                    onClick={handleVerifyEmailCode}
+                    disabled={isVerifyingCode || isSendingCode}
+                  >
+                    {isVerifyingCode ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        验证中...
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="h-4 w-4" />
+                        验证邮箱
+                      </>
+                    )}
+                  </Button>
+                </>
+              )}
+
+              {step === "account" && (
+                <>
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name">用户名</Label>
@@ -231,27 +467,6 @@ export default function RegisterPage() {
                 {tenantCodeError && (
                   <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
                     请输入租户编码
-                  </p>
-                )}
-              </div>
-
-              {/* Email */}
-              <div className="space-y-2">
-                <Label htmlFor="email">邮箱</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onBlur={() => setTouched((t) => ({ ...t, email: true }))}
-                  className={emailError ? "border-destructive focus-visible:ring-destructive" : ""}
-                  autoComplete="email"
-                  disabled={isLoading}
-                />
-                {emailError && (
-                  <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
-                    请输入有效的邮箱地址
                   </p>
                 )}
               </div>
@@ -387,6 +602,8 @@ export default function RegisterPage() {
                   </>
                 )}
               </Button>
+                </>
+              )}
             </form>
 
             <div className="relative">

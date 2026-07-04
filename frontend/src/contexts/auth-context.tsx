@@ -40,8 +40,15 @@ interface AuthContextType {
    * @param email - 邮箱地址
    * @param password - 密码
    * @param tenantCode - 租户编码
+   * @param verificationToken - 邮箱验证凭据
    */
-  register: (username: string, email: string, password: string, tenantCode: string) => Promise<void>
+  register: (
+    username: string,
+    email: string,
+    password: string,
+    tenantCode: string,
+    verificationToken: string,
+  ) => Promise<void>
   /** 用户登出 */
   logout: () => Promise<void>
   /** 重新获取当前用户信息（用于资料修改后同步） */
@@ -97,12 +104,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /** 注册 */
   const register = useCallback(
-    async (username: string, email: string, password: string, tenantCode: string): Promise<void> => {
+    async (
+      username: string,
+      email: string,
+      password: string,
+      tenantCode: string,
+      verificationToken: string,
+    ): Promise<void> => {
       const response = await post<TokenResponse>('/api/v1/auth/register', {
         username,
         email,
         password,
         tenantCode,
+        verificationToken,
       })
       setUser(response.userInfo)
     },

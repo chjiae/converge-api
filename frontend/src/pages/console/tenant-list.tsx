@@ -192,7 +192,8 @@ export default function TenantListPage() {
    * 处理状态筛选变更
    * 切换筛选条件时自动回到第一页
    */
-  const handleStatusFilterChange = (value: string) => {
+  const handleStatusFilterChange = (value: string | null) => {
+    if (value === null) return
     setStatusFilter(value)
     setPage(1)
   }

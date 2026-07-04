@@ -3,12 +3,17 @@ package com.github.chjiae.service.controller;
 import com.github.chjiae.common.result.Result;
 import com.github.chjiae.service.annotation.Auditable;
 import com.github.chjiae.service.config.AuthCookieProperties;
+import com.github.chjiae.service.dto.auth.CaptchaResponse;
 import com.github.chjiae.service.dto.auth.LoginRequest;
 import com.github.chjiae.service.dto.auth.RegisterRequest;
+import com.github.chjiae.service.dto.auth.SendRegisterEmailCodeRequest;
 import com.github.chjiae.service.dto.auth.TokenResponse;
+import com.github.chjiae.service.dto.auth.VerifyRegisterEmailCodeRequest;
+import com.github.chjiae.service.dto.auth.VerifyRegisterEmailCodeResponse;
 import com.github.chjiae.service.security.JwtTokenProvider;
 import com.github.chjiae.service.security.TokenBlacklistService;
 import com.github.chjiae.service.service.AuthService;
+import com.github.chjiae.service.service.RegisterVerificationService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,6 +38,9 @@ public class AuthController {
     /** 认证服务 */
     private final AuthService authService;
 
+    /** 注册验证码服务 */
+    private final RegisterVerificationService registerVerificationService;
+
     /** JWT 令牌提供者 */
     private final JwtTokenProvider jwtTokenProvider;
 
@@ -41,6 +49,43 @@ public class AuthController {
 
     /** 认证 Cookie 配置属性 */
     private final AuthCookieProperties cookieProperties;
+
+    /**
+     * 获取注册人机验证码
+     *
+     * @return 人机验证码响应
+     */
+    @GetMapping("/captcha")
+    public Result<CaptchaResponse> captcha() {
+        log.info("注册人机验证码接口调用");
+        return Result.ok(registerVerificationService.createCaptcha());
+    }
+
+    /**
+     * 发送注册邮箱验证码
+     *
+     * @param request 发送验证码请求参数
+     * @return 成功响应
+     */
+    @PostMapping("/register/email-code/send")
+    public Result<Void> sendRegisterEmailCode(@Valid @RequestBody SendRegisterEmailCodeRequest request) {
+        log.info("发送注册邮箱验证码接口调用，邮箱: {}", request.getEmail());
+        registerVerificationService.sendEmailCode(request);
+        return Result.ok();
+    }
+
+    /**
+     * 校验注册邮箱验证码
+     *
+     * @param request 校验验证码请求参数
+     * @return 注册凭据响应
+     */
+    @PostMapping("/register/email-code/verify")
+    public Result<VerifyRegisterEmailCodeResponse> verifyRegisterEmailCode(
+            @Valid @RequestBody VerifyRegisterEmailCodeRequest request) {
+        log.info("校验注册邮箱验证码接口调用，邮箱: {}", request.getEmail());
+        return Result.ok(registerVerificationService.verifyEmailCode(request));
+    }
 
     /**
      * 用户登录

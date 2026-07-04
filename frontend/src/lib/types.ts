@@ -49,6 +49,22 @@ export interface RegisterRequest {
   password: string
   /** 租户编码（用于关联租户） */
   tenantCode: string
+  /** 邮箱验证凭据 */
+  verificationToken: string
+}
+
+/** 注册人机验证码响应 */
+export interface CaptchaResponse {
+  /** 验证码 ID */
+  captchaId: string
+  /** Base64 图片数据 */
+  imageBase64: string
+}
+
+/** 注册邮箱验证码校验响应 */
+export interface VerifyRegisterEmailCodeResponse {
+  /** 邮箱验证通过后签发的注册凭据 */
+  verificationToken: string
 }
 
 /** 租户信息 */

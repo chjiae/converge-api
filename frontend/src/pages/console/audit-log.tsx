@@ -94,7 +94,8 @@ export default function AuditLogPage() {
    * 处理模块筛选变更
    * 切换筛选条件时自动回到第一页
    */
-  const handleModuleFilterChange = (value: string) => {
+  const handleModuleFilterChange = (value: string | null) => {
+    if (value === null) return
     setModuleFilter(value)
     setPage(1)
   }
