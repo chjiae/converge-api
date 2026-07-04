@@ -8,12 +8,15 @@
  * - contactEmail（联系人邮箱，必填，邮箱格式校验）
  * - contactPhone（联系人手机，选填）
  * - applicationType（申请类型，必填，REGISTER / TRIAL）
+ * - adminUsername（管理员用户名，必填）
+ * - adminEmail（管理员邮箱，必填，邮箱格式校验）
+ * - adminPassword（管理员密码，必填，最少 6 位）
  * - description（申请说明，选填）
  */
 
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Loader2, CheckCircle2 } from "lucide-react"
+import { Loader2, CheckCircle2, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -58,6 +61,12 @@ interface CreateApplicationRequest {
   contactPhone: string
   /** 申请类型，必填 */
   applicationType: ApplicationType
+  /** 管理员用户名，必填 */
+  adminUsername: string
+  /** 管理员邮箱，必填 */
+  adminEmail: string
+  /** 管理员密码，必填 */
+  adminPassword: string
   /** 申请说明，选填 */
   description: string
 }
@@ -68,6 +77,10 @@ export default function ApplyPage() {
   const [contactEmail, setContactEmail] = useState("")
   const [contactPhone, setContactPhone] = useState("")
   const [applicationType, setApplicationType] = useState<ApplicationType | "">("")
+  const [adminUsername, setAdminUsername] = useState("")
+  const [adminEmail, setAdminEmail] = useState("")
+  const [adminPassword, setAdminPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [description, setDescription] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -76,6 +89,9 @@ export default function ApplyPage() {
     contactName: false,
     contactEmail: false,
     applicationType: false,
+    adminUsername: false,
+    adminEmail: false,
+    adminPassword: false,
   })
 
   /* 字段校验 */
@@ -83,6 +99,9 @@ export default function ApplyPage() {
   const contactNameError = touched.contactName && contactName.trim().length === 0
   const contactEmailError = touched.contactEmail && !contactEmail.includes("@")
   const applicationTypeError = touched.applicationType && applicationType.length === 0
+  const adminUsernameError = touched.adminUsername && adminUsername.trim().length === 0
+  const adminEmailError = touched.adminEmail && !adminEmail.includes("@")
+  const adminPasswordError = touched.adminPassword && adminPassword.length < 6
 
   /**
    * 提交申请
@@ -98,10 +117,21 @@ export default function ApplyPage() {
       contactName: true,
       contactEmail: true,
       applicationType: true,
+      adminUsername: true,
+      adminEmail: true,
+      adminPassword: true,
     })
 
     /* 校验必填字段 */
-    if (!companyName.trim() || !contactName.trim() || !contactEmail.includes("@") || !applicationType) {
+    if (
+      !companyName.trim() ||
+      !contactName.trim() ||
+      !contactEmail.includes("@") ||
+      !applicationType ||
+      !adminUsername.trim() ||
+      !adminEmail.includes("@") ||
+      adminPassword.length < 6
+    ) {
       toast.error("请填写所有必填字段")
       return
     }
@@ -112,6 +142,9 @@ export default function ApplyPage() {
       contactEmail: contactEmail.trim(),
       contactPhone: contactPhone.trim(),
       applicationType: applicationType as ApplicationType,
+      adminUsername: adminUsername.trim(),
+      adminEmail: adminEmail.trim(),
+      adminPassword,
       description: description.trim(),
     }
 
@@ -371,6 +404,93 @@ export default function ApplyPage() {
                       disabled={isLoading}
                       className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
                     />
+                  </div>
+
+                  {/* 分隔线：管理员信息 */}
+                  <div className="pt-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                      管理员账号信息
+                    </p>
+                    <div className="h-px bg-border" />
+                  </div>
+
+                  {/* 管理员用户名 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="adminUsername">
+                      管理员用户名 <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="adminUsername"
+                      placeholder="审核通过后用于登录的用户名"
+                      value={adminUsername}
+                      onChange={(e) => setAdminUsername(e.target.value)}
+                      onBlur={() => setTouched((t) => ({ ...t, adminUsername: true }))}
+                      className={adminUsernameError ? "border-destructive focus-visible:ring-destructive" : ""}
+                      autoComplete="username"
+                      disabled={isLoading}
+                    />
+                    {adminUsernameError && (
+                      <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                        请输入管理员用户名
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 管理员邮箱 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="adminEmail">
+                      管理员邮箱 <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="adminEmail"
+                      type="email"
+                      placeholder="admin@example.com"
+                      value={adminEmail}
+                      onChange={(e) => setAdminEmail(e.target.value)}
+                      onBlur={() => setTouched((t) => ({ ...t, adminEmail: true }))}
+                      className={adminEmailError ? "border-destructive focus-visible:ring-destructive" : ""}
+                      autoComplete="email"
+                      disabled={isLoading}
+                    />
+                    {adminEmailError && (
+                      <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                        请输入有效的邮箱地址
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 管理员密码 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="adminPassword">
+                      管理员密码 <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="adminPassword"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="至少 6 个字符"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        onBlur={() => setTouched((t) => ({ ...t, adminPassword: true }))}
+                        className={`pr-10 ${adminPasswordError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                        autoComplete="new-password"
+                        disabled={isLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-0.5"
+                        tabIndex={-1}
+                        aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {adminPasswordError && (
+                      <p className="text-xs text-destructive animate-in fade-in slide-in-from-top-1 duration-150">
+                        密码至少需要 6 个字符
+                      </p>
+                    )}
                   </div>
 
                   <Button
