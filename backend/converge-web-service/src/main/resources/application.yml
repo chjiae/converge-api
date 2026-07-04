@@ -22,6 +22,17 @@ spring:
     redis:
       host: localhost
       port: 6379
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 jwt:
   secret-key: ConvergeApiSecretKey2026ThisIsAVeryLongSecretKeyForHS256Algorithm
@@ -64,3 +75,8 @@ auth:
     secure: ${AUTH_COOKIE_SECURE:false}
     same-site: ${AUTH_COOKIE_SAME_SITE:Strict}
     domain: ${AUTH_COOKIE_DOMAIN:}
+
+# 应用邮件配置
+app:
+  mail:
+    from-name: ${MAIL_FROM_NAME:Converge API}

@@ -60,6 +60,9 @@ public class ApplicationService {
     /** 密码编码器 */
     private final PasswordEncoder passwordEncoder;
 
+    /** 邮件发送服务 */
+    private final EmailService emailService;
+
     /**
      * 提交租户申请（公开接口）
      * 创建申请记录，状态为 PENDING
@@ -225,6 +228,16 @@ public class ApplicationService {
         applicationMapper.updateById(application);
 
         log.info("申请审核通过，申请 ID: {}", id);
+
+        // 异步发送审核通过邮件通知
+        emailService.sendApplicationApprovedEmail(
+                application.getContactEmail(),
+                application.getContactName(),
+                application.getCompanyName(),
+                application.getAdminUsername(),
+                tenant.getCode()
+        );
+
         return toApplicationResponse(application);
     }
 
@@ -261,6 +274,15 @@ public class ApplicationService {
         applicationMapper.updateById(application);
 
         log.info("申请审核拒绝，申请 ID: {}", id);
+
+        // 异步发送审核拒绝邮件通知
+        emailService.sendApplicationRejectedEmail(
+                application.getContactEmail(),
+                application.getContactName(),
+                application.getCompanyName(),
+                rejectReason
+        );
+
         return toApplicationResponse(application);
     }
 

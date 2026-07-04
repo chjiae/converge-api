@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>入驻申请审核结果</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:40px 0;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                    <!-- 头部 -->
+                    <tr>
+                        <td style="background:linear-gradient(135deg,#5a5a6e,#7a7a8e);padding:32px 40px;text-align:center;">
+                            <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:600;">Converge API</h1>
+                            <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">入驻申请审核结果</p>
+                        </td>
+                    </tr>
+                    <!-- 正文 -->
+                    <tr>
+                        <td style="padding:32px 40px;">
+                            <p style="margin:0 0 16px;color:#333333;font-size:16px;">
+                                <strong th:text="${contactName}">联系人</strong>，您好！
+                            </p>
+                            <p style="margin:0 0 24px;color:#555555;font-size:14px;line-height:1.6;">
+                                很遗憾，您的公司 <strong th:text="${companyName}">公司名称</strong> 的入驻申请未通过审核。
+                            </p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fff8f0;border:1px solid #ffe0c0;border-radius:6px;padding:4px 0;margin-bottom:24px;">
+                                <tr>
+                                    <td style="padding:16px 20px;">
+                                        <span style="color:#b8600a;font-size:13px;font-weight:600;">拒绝原因</span><br/>
+                                        <span style="color:#555555;font-size:14px;line-height:1.6;display:block;margin-top:6px;" th:text="${rejectReason}">未说明</span>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin:0 0 8px;color:#555555;font-size:14px;line-height:1.6;">
+                                如果您认为这是一个错误，或希望重新提交申请，请联系平台管理员。
+                            </p>
+                            <p style="margin:0;color:#999999;font-size:12px;">
+                                感谢您的理解与支持。
+                            </p>
+                        </td>
+                    </tr>
+                    <!-- 底部 -->
+                    <tr>
+                        <td style="background-color:#f8f9fa;padding:20px 40px;text-align:center;border-top:1px solid #e9ecef;">
+                            <p style="margin:0;color:#999999;font-size:12px;">此邮件由系统自动发送，请勿直接回复。</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
