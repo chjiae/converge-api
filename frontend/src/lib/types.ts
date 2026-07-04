@@ -297,11 +297,11 @@ export interface PageResult<T> {
 /**
  * 统一响应包装
  *
- * 后端所有接口统一返回此结构，code 为 0 表示成功，非 0 表示业务异常。
+ * 后端所有接口统一返回此结构，code 为 200 表示成功，非 200 表示业务异常。
  * @template T - data 字段的实际数据类型
  */
 export interface Result<T> {
-  /** 响应码，0 表示成功 */
+  /** 响应码，200 表示成功 */
   code: number
   /** 响应消息 */
   message: string

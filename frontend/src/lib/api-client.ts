@@ -105,8 +105,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   // 解析统一响应格式
   const result: Result<T> = await resp.json()
 
-  // 业务错误码非 0，抛出 ApiError
-  if (result.code !== 0) {
+  // 业务错误码非 200，抛出 ApiError
+  if (result.code !== 200) {
     throw new ApiError(result.code, result.message)
   }
 
