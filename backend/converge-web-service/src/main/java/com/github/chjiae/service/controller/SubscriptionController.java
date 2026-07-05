@@ -2,6 +2,7 @@ package com.github.chjiae.service.controller;
 
 import com.github.chjiae.common.result.PageResult;
 import com.github.chjiae.common.result.Result;
+import com.github.chjiae.service.dto.subscription.CreateRenewalRequest;
 import com.github.chjiae.service.dto.subscription.CreateSubscriptionRequest;
 import com.github.chjiae.service.dto.subscription.SubscriptionResponse;
 import com.github.chjiae.service.security.UserPrincipal;
@@ -107,6 +108,23 @@ public class SubscriptionController {
         UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
         log.info("发起续费接口调用，租户 ID: {}，操作人: {}", principal.getTenantId(), principal.getUserId());
         SubscriptionResponse response = subscriptionService.initiateRenewal(request);
+        return Result.ok(response);
+    }
+
+    /**
+     * 基于套餐配置发起续费。
+     *
+     * @param request 续费请求参数，仅包含套餐 ID、支付方式和备注
+     * @return 创建的续费订阅信息
+     */
+    @PostMapping("/my-subscriptions/renewals")
+    @PreAuthorize("isAuthenticated()")
+    public Result<SubscriptionResponse> createRenewalFromPlan(@Valid @RequestBody CreateRenewalRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        UserPrincipal principal = (UserPrincipal) auth.getPrincipal();
+        log.info("套餐续费接口调用，租户 ID: {}，套餐 ID: {}，操作人: {}",
+                principal.getTenantId(), request.getPlanId(), principal.getUserId());
+        SubscriptionResponse response = subscriptionService.createRenewalFromPlan(request);
         return Result.ok(response);
     }
 

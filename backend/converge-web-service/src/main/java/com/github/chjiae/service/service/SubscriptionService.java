@@ -7,8 +7,10 @@ import com.github.chjiae.common.enums.TenantStatus;
 import com.github.chjiae.common.exception.BusinessException;
 import com.github.chjiae.common.result.PageResult;
 import com.github.chjiae.service.dto.subscription.CreateSubscriptionRequest;
+import com.github.chjiae.service.dto.subscription.CreateRenewalRequest;
 import com.github.chjiae.service.dto.subscription.SubscriptionResponse;
 import com.github.chjiae.service.entity.Subscription;
+import com.github.chjiae.service.entity.SubscriptionPlan;
 import com.github.chjiae.service.entity.Tenant;
 import com.github.chjiae.service.mapper.SubscriptionMapper;
 import com.github.chjiae.service.mapper.TenantMapper;
@@ -40,6 +42,9 @@ public class SubscriptionService {
 
     /** 租户数据访问层 */
     private final TenantMapper tenantMapper;
+
+    /** 订阅套餐配置服务 */
+    private final SubscriptionPlanService subscriptionPlanService;
 
     /**
      * 创建订阅记录（超管/运营为指定租户创建线下订阅）
@@ -225,6 +230,67 @@ public class SubscriptionService {
 
         log.info("续费订阅创建成功，订阅 ID: {}，租户 ID: {}", subscription.getId(), request.getTenantId());
         return toSubscriptionResponse(subscription);
+    }
+
+    /**
+     * 租户基于套餐配置发起续费。
+     *
+     * 前端只提交套餐 ID 和支付方式，金额、周期和租户 ID 均由后端计算，避免篡改。
+     *
+     * @param request 续费请求参数
+     * @return 订阅响应
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SubscriptionResponse createRenewalFromPlan(CreateRenewalRequest request) {
+        UserPrincipal principal = getCurrentUser();
+        if (principal.getTenantId() == null) {
+            throw new BusinessException(400, "当前用户未关联租户，无法续费");
+        }
+        log.info("租户基于套餐发起续费，租户 ID: {}，套餐 ID: {}，支付方式: {}",
+                principal.getTenantId(), request.getPlanId(), request.getPaymentMethod());
+
+        SubscriptionPlan plan = subscriptionPlanService.getEnabledPlan(request.getPlanId());
+        Tenant tenant = tenantMapper.selectById(principal.getTenantId());
+        if (tenant == null) {
+            throw new BusinessException(404, "租户不存在");
+        }
+
+        LocalDate startDate = calculateRenewalStartDate(tenant);
+        LocalDate endDate = startDate.plusMonths(plan.getDurationMonths());
+
+        Subscription subscription = new Subscription();
+        subscription.setTenantId(principal.getTenantId());
+        subscription.setPlanType(plan.getPlanType());
+        subscription.setAmount(subscriptionPlanService.calculateFinalPrice(plan));
+        subscription.setStartDate(startDate);
+        subscription.setEndDate(endDate);
+        subscription.setStatus(SubscriptionStatus.PENDING);
+        subscription.setPaymentMethod(request.getPaymentMethod());
+        subscription.setRemark(request.getRemark());
+        subscription.setCreatedBy(principal.getUserId());
+        subscription.setCreatedAt(LocalDateTime.now());
+        subscription.setUpdatedAt(LocalDateTime.now());
+        subscriptionMapper.insert(subscription);
+
+        log.info("套餐续费订单创建成功，订阅 ID: {}，租户 ID: {}，周期: {} 至 {}",
+                subscription.getId(), subscription.getTenantId(), startDate, endDate);
+        return toSubscriptionResponse(subscription);
+    }
+
+    /**
+     * 计算续费开始日期。
+     *
+     * 如果租户仍在有效期内，从当前有效期日期继续顺延；否则从今天开始。
+     *
+     * @param tenant 租户实体
+     * @return 续费开始日期
+     */
+    private LocalDate calculateRenewalStartDate(Tenant tenant) {
+        LocalDate today = LocalDate.now();
+        if (tenant.getExpiredAt() == null || tenant.getExpiredAt().toLocalDate().isBefore(today)) {
+            return today;
+        }
+        return tenant.getExpiredAt().toLocalDate();
     }
 
     /**

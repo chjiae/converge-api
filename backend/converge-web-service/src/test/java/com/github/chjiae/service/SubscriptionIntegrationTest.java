@@ -20,6 +20,7 @@ class SubscriptionIntegrationTest extends BaseIntegrationTest {
     static String tenantAdminToken;
     static Long tenantId;
     static Long subscriptionId;
+    static Long monthlyPlanId;
 
     @Test
     @Order(1)
@@ -126,6 +127,64 @@ class SubscriptionIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @Order(7)
+    void subscriptionPlans_查询启用套餐_返回默认套餐() {
+        ResponseEntity<String> response = get("/api/v1/subscription-plans/enabled", tenantAdminToken);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = assertSuccess(response);
+        assertThat(data.isArray()).isTrue();
+        assertThat(data.size()).isGreaterThanOrEqualTo(3);
+
+        for (JsonNode item : data) {
+            if ("MONTHLY".equals(item.get("planType").asText())) {
+                monthlyPlanId = item.get("id").asLong();
+                assertThat(item.get("name").asText()).isNotBlank();
+                assertThat(item.get("finalPrice").decimalValue()).isEqualByComparingTo("99.00");
+            }
+        }
+        assertThat(monthlyPlanId).as("应存在默认月付套餐").isNotNull();
+    }
+
+    @Test
+    @Order(8)
+    void subscriptionPlans_超管设置折扣价_租户续费使用折扣价() {
+        String updateBody = """
+                {
+                  "name": "月付套餐",
+                  "planType": "MONTHLY",
+                  "durationMonths": 1,
+                  "originalPrice": 99.00,
+                  "discountName": "节日特惠",
+                  "discountPrice": 88.00,
+                  "discountStartAt": "2026-01-01 00:00:00",
+                  "discountEndAt": "2026-12-31 23:59:59",
+                  "benefits": "适合短期体验\\n完整 API 权限",
+                  "enabled": true,
+                  "recommended": false,
+                  "sortOrder": 1
+                }
+                """;
+        ResponseEntity<String> updateResponse = put("/api/v1/subscription-plans/" + monthlyPlanId, adminToken, updateBody);
+        assertSuccess(updateResponse);
+
+        String renewalBody = """
+                {
+                  "planId": %d,
+                  "paymentMethod": "OFFLINE",
+                  "remark": "节日折扣续费"
+                }
+                """.formatted(monthlyPlanId);
+        ResponseEntity<String> renewalResponse = post("/api/v1/my-subscriptions/renewals", tenantAdminToken, renewalBody);
+
+        JsonNode renewalData = assertSuccess(renewalResponse);
+        assertThat(renewalData.get("planType").asText()).isEqualTo("MONTHLY");
+        assertThat(renewalData.get("amount").decimalValue()).isEqualByComparingTo("88.00");
+        assertThat(renewalData.get("status").asText()).isEqualTo("PENDING");
+        assertThat(renewalData.get("paymentMethod").asText()).isEqualTo("OFFLINE");
+    }
+
+    @Test
+    @Order(9)
     void subscription_未认证_返回401() {
         ResponseEntity<String> response = restTemplate.getForEntity(
                 baseUrl() + "/api/v1/subscriptions", String.class

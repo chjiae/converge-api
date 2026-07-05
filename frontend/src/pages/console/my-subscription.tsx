@@ -10,6 +10,7 @@
  */
 
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@/hooks/use-api'
 import { get } from '@/lib/api-client'
 import type { Subscription, PageResult } from '@/lib/types'
@@ -21,7 +22,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Clock, CreditCard, CalendarDays } from 'lucide-react'
-import RenewalDialog from '@/pages/console/renewal-dialog'
 
 /**
  * 套餐类型对应的 Badge 样式
@@ -149,15 +149,15 @@ function daysRemaining(endDate: string): number {
  * 我的订阅页面组件
  *
  * 所有已登录用户可访问，查看当前租户的订阅列表，
- * 并通过续费对话框创建新的订阅订单。
+ * 并跳转到套餐购买页创建新的订阅订单。
  */
 export default function MySubscriptionPage() {
+  /** 路由跳转函数 */
+  const navigate = useNavigate()
   /** 当前页码 */
   const [page, setPage] = useState(1)
   /** 每页条数 */
   const [size, setSize] = useState(10)
-  /** 续费对话框是否打开 */
-  const [renewalOpen, setRenewalOpen] = useState(false)
 
   /** 构建查询 URL，包含分页参数 */
   const queryUrl = useMemo(() => {
@@ -169,7 +169,7 @@ export default function MySubscriptionPage() {
   }, [page, size])
 
   /** 获取订阅列表数据 */
-  const { data, loading, refetch } = useQuery<PageResult<Subscription>>(
+  const { data, loading } = useQuery<PageResult<Subscription>>(
     () => get<PageResult<Subscription>>(queryUrl),
     [queryUrl],
   )
@@ -236,7 +236,7 @@ export default function MySubscriptionPage() {
       {/* 页面标题与续费按钮 */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">我的订阅</h1>
-        <Button onClick={() => setRenewalOpen(true)}>
+        <Button onClick={() => navigate('/console/my-subscriptions/renew')}>
           <CreditCard className="size-4" />
           续费
         </Button>
@@ -322,12 +322,6 @@ export default function MySubscriptionPage() {
         />
       )}
 
-      {/* 续费对话框 */}
-      <RenewalDialog
-        open={renewalOpen}
-        onOpenChange={setRenewalOpen}
-        onSuccess={refetch}
-      />
     </div>
   )
 }

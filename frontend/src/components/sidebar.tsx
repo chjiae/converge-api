@@ -16,6 +16,7 @@ import {
   Building2,
   FileCheck2,
   CreditCard,
+  BadgePercent,
   ScrollText,
   Users,
   Shield,
@@ -84,6 +85,7 @@ function buildMenuGroups(isSuperAdmin: boolean, isTenantAdmin: boolean): MenuGro
         { label: '租户管理', to: '/console/tenants', icon: <Building2 className="size-4" /> },
         { label: '申请审核', to: '/console/applications', icon: <FileCheck2 className="size-4" /> },
         { label: '订阅管理', to: '/console/subscriptions', icon: <CreditCard className="size-4" /> },
+        { label: '套餐配置', to: '/console/subscription-plans', icon: <BadgePercent className="size-4" /> },
         { label: '审计日志', to: '/console/audit-logs', icon: <ScrollText className="size-4" /> },
       ],
     })

@@ -143,6 +143,42 @@ export interface Subscription {
   createdAt: string
 }
 
+/** 订阅套餐配置 */
+export interface SubscriptionPlan {
+  /** 套餐 ID */
+  id: number
+  /** 套餐编码 */
+  code: string
+  /** 套餐名称 */
+  name: string
+  /** 套餐类型：MONTHLY | QUARTERLY | YEARLY */
+  planType: string
+  /** 套餐周期（月） */
+  durationMonths: number
+  /** 原价（单位：元） */
+  originalPrice: number
+  /** 当前实际价格（单位：元） */
+  finalPrice: number
+  /** 折扣名称，可能为空 */
+  discountName: string | null
+  /** 折扣价，可能为空 */
+  discountPrice: number | null
+  /** 折扣开始时间，可能为空 */
+  discountStartAt: string | null
+  /** 折扣结束时间，可能为空 */
+  discountEndAt: string | null
+  /** 当前是否命中有效折扣 */
+  hasActiveDiscount: boolean
+  /** 套餐权益列表 */
+  benefits: string[]
+  /** 是否启用 */
+  enabled: boolean
+  /** 是否推荐 */
+  recommended: boolean
+  /** 排序值 */
+  sortOrder: number
+}
+
 /** 用户管理信息（管理后台使用） */
 export interface User {
   /** 用户 ID */

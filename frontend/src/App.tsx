@@ -28,10 +28,12 @@ const TenantListPage = lazy(() => import('@/pages/console/tenant-list'))
 const TenantDetailPage = lazy(() => import('@/pages/console/tenant-detail'))
 const ApplicationListPage = lazy(() => import('@/pages/console/application-list'))
 const SubscriptionListPage = lazy(() => import('@/pages/console/subscription-list'))
+const SubscriptionPlanListPage = lazy(() => import('@/pages/console/subscription-plan-list'))
 const AuditLogPage = lazy(() => import('@/pages/console/audit-log'))
 const UserListPage = lazy(() => import('@/pages/console/user-list'))
 const RoleListPage = lazy(() => import('@/pages/console/role-list'))
 const MySubscriptionPage = lazy(() => import('@/pages/console/my-subscription'))
+const SubscriptionRenewPage = lazy(() => import('@/pages/console/subscription-renew'))
 const PaymentResultPage = lazy(() => import('@/pages/payment/payment-result'))
 const NotificationListPage = lazy(() => import('@/pages/console/notification-list'))
 const ProfilePage = lazy(() => import('@/pages/console/profile'))
@@ -75,6 +77,7 @@ function App() {
               <Route path="/console/tenants/:id" element={<TenantDetailPage />} />
               <Route path="/console/applications" element={<ApplicationListPage />} />
               <Route path="/console/subscriptions" element={<SubscriptionListPage />} />
+              <Route path="/console/subscription-plans" element={<SubscriptionPlanListPage />} />
               <Route path="/console/audit-logs" element={<AuditLogPage />} />
             </Route>
 
@@ -86,6 +89,7 @@ function App() {
 
             {/* 所有已登录用户可访问的路由 */}
             <Route path="/console/my-subscriptions" element={<MySubscriptionPage />} />
+            <Route path="/console/my-subscriptions/renew" element={<SubscriptionRenewPage />} />
             <Route path="/console/notifications" element={<NotificationListPage />} />
             <Route path="/console/profile" element={<ProfilePage />} />
           </Route>
