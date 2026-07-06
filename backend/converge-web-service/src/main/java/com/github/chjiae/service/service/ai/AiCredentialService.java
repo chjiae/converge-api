@@ -58,6 +58,9 @@ public class AiCredentialService {
     /** HMAC 指纹服务 */
     private final AiCredentialFingerprintService fingerprintService;
 
+    /** 网关快照变更记录器 */
+    private final GatewaySnapshotChangeRecorder snapshotChangeRecorder;
+
     /**
      * 创建凭据。
      * 服务端负责：生成 secretReference、加密 API Key、计算指纹、生成掩码。
@@ -117,6 +120,7 @@ public class AiCredentialService {
         credential.setUpdatedAt(now);
 
         aiCredentialMapper.insert(credential);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CREDENTIAL_CHANGED);
 
         log.info("AI 凭据创建成功，租户 ID: {}，凭据 ID: {}，编码: {}，掩码: {}",
                 tenantId, credential.getId(), credential.getCode(), maskedPreview);
@@ -199,6 +203,7 @@ public class AiCredentialService {
         credential.setDescription(request.getDescription());
         credential.setUpdatedAt(LocalDateTime.now());
         aiCredentialMapper.updateById(credential);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CREDENTIAL_CHANGED);
 
         log.info("AI 凭据更新成功，租户 ID: {}，凭据 ID: {}", tenantId, id);
         return toResponse(credential);
@@ -255,6 +260,7 @@ public class AiCredentialService {
         credential.setUpdatedAt(LocalDateTime.now());
 
         aiCredentialMapper.updateById(credential);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CREDENTIAL_CHANGED);
 
         log.info("AI 凭据轮换成功，租户 ID: {}，凭据 ID: {}，新版本: {}",
                 tenantId, id, credential.getSecretVersion());
@@ -310,6 +316,7 @@ public class AiCredentialService {
         credential.setAdminStatus(status);
         credential.setUpdatedAt(LocalDateTime.now());
         aiCredentialMapper.updateById(credential);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CREDENTIAL_CHANGED);
 
         log.info("AI 凭据状态更新成功，租户 ID: {}，凭据 ID: {}，状态: {}", tenantId, id, status);
         return toResponse(credential);

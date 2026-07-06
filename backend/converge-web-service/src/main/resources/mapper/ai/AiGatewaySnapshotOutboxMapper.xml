@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.github.chjiae.service.mapper.ai.AiGatewaySnapshotOutboxMapper">
+
+    <select id="claimDue" resultType="com.github.chjiae.service.entity.ai.AiGatewaySnapshotOutbox">
+        WITH picked AS (
+            SELECT id
+            FROM ai_gateway_snapshot_outbox
+            WHERE status IN ('PENDING', 'FAILED')
+              AND next_attempt_at &lt;= #{now}
+              AND (locked_at IS NULL OR locked_at &lt; #{staleBefore})
+            ORDER BY id ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT #{limit}
+        )
+        UPDATE ai_gateway_snapshot_outbox outbox
+        SET status = 'PROCESSING',
+            locked_at = #{now},
+            lock_owner = #{lockOwner},
+            updated_at = #{now}
+        WHERE outbox.id IN (SELECT id FROM picked)
+        RETURNING outbox.*
+    </select>
+
+    <update id="markPublished">
+        UPDATE ai_gateway_snapshot_outbox
+        SET status = 'PUBLISHED',
+            published_at = #{now},
+            updated_at = #{now},
+            locked_at = NULL,
+            lock_owner = NULL,
+            last_error_summary = NULL
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </update>
+
+    <update id="markFailed">
+        UPDATE ai_gateway_snapshot_outbox
+        SET status = 'FAILED',
+            attempt_count = attempt_count + 1,
+            next_attempt_at = #{nextAttemptAt},
+            updated_at = #{now},
+            locked_at = NULL,
+            lock_owner = NULL,
+            last_error_summary = #{errorSummary}
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </update>
+</mapper>

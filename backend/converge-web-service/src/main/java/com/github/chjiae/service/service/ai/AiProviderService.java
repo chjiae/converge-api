@@ -36,6 +36,9 @@ public class AiProviderService {
     /** AI 目录租户守卫 */
     private final AiCatalogTenantGuard tenantGuard;
 
+    /** 网关快照变更记录器 */
+    private final GatewaySnapshotChangeRecorder snapshotChangeRecorder;
+
     /**
      * 创建 AI 供应商。
      *
@@ -61,6 +64,7 @@ public class AiProviderService {
         provider.setCreatedAt(now);
         provider.setUpdatedAt(now);
         aiProviderMapper.insert(provider);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_PROVIDER_CHANGED);
 
         log.info("AI 供应商创建成功，租户 ID: {}，供应商 ID: {}，编码: {}", tenantId, provider.getId(), provider.getCode());
         return toResponse(provider);
@@ -140,6 +144,7 @@ public class AiProviderService {
         provider.setDescription(request.getDescription());
         provider.setUpdatedAt(LocalDateTime.now());
         aiProviderMapper.updateById(provider);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_PROVIDER_CHANGED);
 
         log.info("AI 供应商更新成功，租户 ID: {}，供应商 ID: {}", tenantId, id);
         return toResponse(provider);
@@ -203,6 +208,7 @@ public class AiProviderService {
         provider.setStatus(status);
         provider.setUpdatedAt(LocalDateTime.now());
         aiProviderMapper.updateById(provider);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_PROVIDER_CHANGED);
 
         log.info("AI 供应商状态更新成功，租户 ID: {}，供应商 ID: {}，状态: {}", tenantId, id, status);
         return toResponse(provider);

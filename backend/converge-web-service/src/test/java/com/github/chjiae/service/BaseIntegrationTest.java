@@ -57,6 +57,12 @@ public abstract class BaseIntegrationTest {
         registry.add("ai.credential.encryption.active-key-id", () -> "test-key-v1");
         registry.add("ai.credential.encryption.active-key-base64", () -> "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=");
         registry.add("ai.credential.encryption.fingerprint-key-base64", () -> "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=");
+        registry.add("ai.gateway.snapshot.key-id", () -> "gateway-test-key-v1");
+        registry.add("ai.gateway.snapshot.encryption-key-base64", () -> "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=");
+        registry.add("ai.gateway.snapshot.signing-key-base64", () -> "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=");
+        registry.add("ai.gateway.snapshot.outbox-projector-interval-ms", () -> "60000");
+        registry.add("ai.gateway.snapshot.reproject-interval-ms", () -> "60000");
+        registry.add("ai.gateway.snapshot.reproject-initial-delay-ms", () -> "60000");
     }
 
     @LocalServerPort

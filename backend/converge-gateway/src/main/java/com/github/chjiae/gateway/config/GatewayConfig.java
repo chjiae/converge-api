@@ -14,13 +14,15 @@ import java.util.Map;
  * @param shutdownTimeoutMs 优雅关闭等待时间，单位毫秒
  * @param serviceName       服务名称
  * @param buildVersion      构建版本
+ * @param snapshotConfig    快照同步配置
  */
 public record GatewayConfig(
         String host,
         int port,
         long shutdownTimeoutMs,
         String serviceName,
-        String buildVersion
+        String buildVersion,
+        GatewaySnapshotConfig snapshotConfig
 ) {
 
     /** 默认监听地址 */
@@ -54,6 +56,9 @@ public record GatewayConfig(
         if (buildVersion == null || buildVersion.isBlank()) {
             throw new IllegalArgumentException("网关构建版本不能为空");
         }
+        if (snapshotConfig == null) {
+            throw new IllegalArgumentException("网关快照配置不能为空");
+        }
     }
 
     /**
@@ -84,7 +89,24 @@ public record GatewayConfig(
         String serviceName = read(properties, environment, "GATEWAY_SERVICE_NAME", "gateway.service-name", DEFAULT_SERVICE_NAME);
         String buildVersion = read(properties, environment, "GATEWAY_BUILD_VERSION", "gateway.build-version",
                 GatewayBuildInfo.buildVersion());
-        return new GatewayConfig(host, port, shutdownTimeoutMs, serviceName, buildVersion);
+        GatewaySnapshotConfig snapshotConfig = new GatewaySnapshotConfig(
+                read(properties, environment, "GATEWAY_REDIS_URI", "gateway.redis-uri", ""),
+                read(properties, environment, "AI_GATEWAY_SNAPSHOT_KEY_ID", "ai.gateway.snapshot.key-id", ""),
+                read(properties, environment, "AI_GATEWAY_SNAPSHOT_ENCRYPTION_KEY_BASE64",
+                        "ai.gateway.snapshot.encryption-key-base64", ""),
+                read(properties, environment, "AI_GATEWAY_SNAPSHOT_SIGNING_KEY_BASE64",
+                        "ai.gateway.snapshot.signing-key-base64", ""),
+                parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_RECONCILE_INTERVAL_MS",
+                                "gateway.snapshot.reconcile-interval-ms", "5000"),
+                        "网关快照对账间隔必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_MAX_STALENESS_MS",
+                                "gateway.snapshot.max-staleness-ms", "30000"),
+                        "网关快照最大陈旧时间必须是大于 0 的整数"),
+                (int) parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_HISTORY_RETAIN_COUNT",
+                                "gateway.snapshot.history-retain-count", "3"),
+                        "网关快照历史保留数量必须是大于 0 的整数")
+        );
+        return new GatewayConfig(host, port, shutdownTimeoutMs, serviceName, buildVersion, snapshotConfig);
     }
 
     /**

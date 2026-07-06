@@ -42,6 +42,9 @@ public class AiUpstreamConnectionService {
     /** Base URL 规范化组件 */
     private final AiBaseUrlNormalizer baseUrlNormalizer;
 
+    /** 网关快照变更记录器 */
+    private final GatewaySnapshotChangeRecorder snapshotChangeRecorder;
+
     /**
      * 创建上游连接。
      *
@@ -72,6 +75,7 @@ public class AiUpstreamConnectionService {
         connection.setCreatedAt(now);
         connection.setUpdatedAt(now);
         aiUpstreamConnectionMapper.insert(connection);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CONNECTION_CHANGED);
 
         log.info("AI 上游连接创建成功，租户 ID: {}，连接 ID: {}", tenantId, connection.getId());
         return toResponse(connection);
@@ -158,6 +162,7 @@ public class AiUpstreamConnectionService {
         connection.setDescription(request.getDescription());
         connection.setUpdatedAt(LocalDateTime.now());
         aiUpstreamConnectionMapper.updateById(connection);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CONNECTION_CHANGED);
 
         log.info("AI 上游连接更新成功，租户 ID: {}，连接 ID: {}", tenantId, id);
         return toResponse(connection);
@@ -202,6 +207,7 @@ public class AiUpstreamConnectionService {
         connection.setStatus(status);
         connection.setUpdatedAt(LocalDateTime.now());
         aiUpstreamConnectionMapper.updateById(connection);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_CONNECTION_CHANGED);
 
         log.info("AI 上游连接状态更新成功，租户 ID: {}，连接 ID: {}，状态: {}", tenantId, id, status);
         return toResponse(connection);

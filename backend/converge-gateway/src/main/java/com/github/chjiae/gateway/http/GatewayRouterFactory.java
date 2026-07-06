@@ -1,6 +1,7 @@
 package com.github.chjiae.gateway.http;
 
 import com.github.chjiae.gateway.config.GatewayConfig;
+import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;
 
@@ -24,8 +25,9 @@ public final class GatewayRouterFactory {
      * @param startedAt 进程启动时间
      * @return 路由
      */
-    public static Router create(Vertx vertx, GatewayConfig config, Instant startedAt) {
-        return create(vertx, config, startedAt, false);
+    public static Router create(Vertx vertx, GatewayConfig config, Instant startedAt,
+                                GatewaySnapshotRuntime snapshotRuntime) {
+        return create(vertx, config, startedAt, snapshotRuntime, false);
     }
 
     /**
@@ -37,9 +39,10 @@ public final class GatewayRouterFactory {
      * @param enableTestFailureRoute 是否启用测试专用异常路由
      * @return 路由
      */
-    public static Router create(Vertx vertx, GatewayConfig config, Instant startedAt, boolean enableTestFailureRoute) {
+    public static Router create(Vertx vertx, GatewayConfig config, Instant startedAt,
+                                GatewaySnapshotRuntime snapshotRuntime, boolean enableTestFailureRoute) {
         Router router = Router.router(vertx);
-        InternalStatusHandler internalStatusHandler = new InternalStatusHandler(config, startedAt);
+        InternalStatusHandler internalStatusHandler = new InternalStatusHandler(config, startedAt, snapshotRuntime);
 
         router.route().handler(new AccessLogHandler());
         router.route().handler(new RequestIdHandler());
@@ -47,6 +50,7 @@ public final class GatewayRouterFactory {
         router.get("/internal/health").handler(internalStatusHandler::health);
         router.get("/internal/ready").handler(internalStatusHandler::ready);
         router.get("/internal/version").handler(internalStatusHandler::version);
+        router.get("/internal/snapshot-status").handler(internalStatusHandler::snapshotStatus);
 
         if (enableTestFailureRoute) {
             // 仅测试统一 500 响应使用，正式运行配置不会注册此路由。

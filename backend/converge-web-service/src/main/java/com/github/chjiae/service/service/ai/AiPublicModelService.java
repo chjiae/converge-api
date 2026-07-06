@@ -36,6 +36,9 @@ public class AiPublicModelService {
     /** AI 目录租户守卫 */
     private final AiCatalogTenantGuard tenantGuard;
 
+    /** 网关快照变更记录器 */
+    private final GatewaySnapshotChangeRecorder snapshotChangeRecorder;
+
     /**
      * 创建公开模型。
      *
@@ -61,6 +64,7 @@ public class AiPublicModelService {
         model.setCreatedAt(now);
         model.setUpdatedAt(now);
         aiPublicModelMapper.insert(model);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_PUBLIC_MODEL_CHANGED);
 
         log.info("AI 公开模型创建成功，租户 ID: {}，模型 ID: {}，编码: {}", tenantId, model.getId(), model.getCode());
         return toResponse(model);
@@ -141,6 +145,7 @@ public class AiPublicModelService {
         model.setDescription(request.getDescription());
         model.setUpdatedAt(LocalDateTime.now());
         aiPublicModelMapper.updateById(model);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_PUBLIC_MODEL_CHANGED);
 
         log.info("AI 公开模型更新成功，租户 ID: {}，模型 ID: {}", tenantId, id);
         return toResponse(model);
@@ -185,6 +190,7 @@ public class AiPublicModelService {
         model.setStatus(status);
         model.setUpdatedAt(LocalDateTime.now());
         aiPublicModelMapper.updateById(model);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_PUBLIC_MODEL_CHANGED);
 
         log.info("AI 公开模型状态更新成功，租户 ID: {}，模型 ID: {}，状态: {}", tenantId, id, status);
         return toResponse(model);

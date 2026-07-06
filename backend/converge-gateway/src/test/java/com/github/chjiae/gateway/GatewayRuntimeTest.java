@@ -1,6 +1,7 @@
 package com.github.chjiae.gateway;
 
 import com.github.chjiae.gateway.config.GatewayConfig;
+import com.github.chjiae.gateway.config.GatewaySnapshotConfig;
 import io.vertx.junit5.VertxExtension;
 import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.AfterEach;
@@ -16,6 +17,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -41,7 +43,8 @@ class GatewayRuntimeTest {
      */
     @BeforeEach
     void setUp(VertxTestContext testContext) throws Throwable {
-        GatewayConfig config = new GatewayConfig("127.0.0.1", 0, 500, "converge-gateway-test", "test-version");
+        GatewayConfig config = new GatewayConfig("127.0.0.1", 0, 500,
+                "converge-gateway-test", "test-version", unavailableSnapshotConfig());
         GatewayRuntime.start(config, true)
                 .onSuccess(started -> {
                     runtime = started;
@@ -88,11 +91,11 @@ class GatewayRuntimeTest {
     }
 
     @Test
-    void ready_启动后立即返回就绪() throws Exception {
+    void ready_快照首次对账失败时返回未就绪() throws Exception {
         HttpResponse<String> response = get("/internal/ready", null);
 
-        assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("\"status\":\"READY\""));
+        assertEquals(503, response.statusCode());
+        assertTrue(response.body().contains("\"status\":\"NOT_READY\""));
     }
 
     @Test
@@ -217,5 +220,23 @@ class GatewayRuntimeTest {
         if (testContext.failed()) {
             throw testContext.causeOfFailure();
         }
+    }
+
+    /**
+     * 构造不可达 Redis 的测试快照配置，用于验证进程接口不受 Redis 启动失败影响。
+     *
+     * @return 快照配置
+     */
+    private GatewaySnapshotConfig unavailableSnapshotConfig() {
+        byte[] encryptionKey = new byte[32];
+        byte[] signingKey = new byte[32];
+        java.util.Arrays.fill(encryptionKey, (byte) 0x03);
+        java.util.Arrays.fill(signingKey, (byte) 0x04);
+        return new GatewaySnapshotConfig("redis://127.0.0.1:1", "gateway-test-key",
+                Base64.getEncoder().encodeToString(encryptionKey),
+                Base64.getEncoder().encodeToString(signingKey),
+                60000,
+                60000,
+                3);
     }
 }

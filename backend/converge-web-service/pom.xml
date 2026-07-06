@@ -28,6 +28,12 @@
             <artifactId>converge-common</artifactId>
         </dependency>
 
+        <!-- Internal: gateway snapshot contract module -->
+        <dependency>
+            <groupId>com.github.chjiae</groupId>
+            <artifactId>converge-contract</artifactId>
+        </dependency>
+
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

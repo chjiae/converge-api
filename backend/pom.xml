@@ -19,6 +19,7 @@
     <description>Converge API - Unified data aggregation platform</description>
 
     <modules>
+        <module>converge-contract</module>
         <module>converge-common</module>
         <module>converge-web-service</module>
         <module>converge-gateway</module>
@@ -37,6 +38,11 @@
             <dependency>
                 <groupId>com.github.chjiae</groupId>
                 <artifactId>converge-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.chjiae</groupId>
+                <artifactId>converge-contract</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

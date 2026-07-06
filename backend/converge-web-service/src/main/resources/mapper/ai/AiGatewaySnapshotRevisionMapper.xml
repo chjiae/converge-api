@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.github.chjiae.service.mapper.ai.AiGatewaySnapshotRevisionMapper">
+
+    <select id="incrementAndGetRevision" resultType="java.lang.Long">
+        INSERT INTO ai_gateway_snapshot_revision (tenant_id, current_revision, updated_at)
+        VALUES (#{tenantId}, 1, #{now})
+        ON CONFLICT (tenant_id)
+        DO UPDATE SET current_revision = ai_gateway_snapshot_revision.current_revision + 1,
+                      updated_at = #{now}
+        RETURNING current_revision
+    </select>
+
+    <select id="selectTenantIdsWithRevision" resultType="java.lang.Long">
+        SELECT tenant_id
+        FROM ai_gateway_snapshot_revision
+        ORDER BY tenant_id ASC
+    </select>
+</mapper>

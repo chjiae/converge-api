@@ -88,3 +88,14 @@ ai:
       active-key-id: ${AI_CREDENTIAL_ACTIVE_KEY_ID:}
       active-key-base64: ${AI_CREDENTIAL_ACTIVE_KEY_BASE64:}
       fingerprint-key-base64: ${AI_CREDENTIAL_FINGERPRINT_KEY_BASE64:}
+  gateway:
+    snapshot:
+      key-id: ${AI_GATEWAY_SNAPSHOT_KEY_ID:}
+      encryption-key-base64: ${AI_GATEWAY_SNAPSHOT_ENCRYPTION_KEY_BASE64:}
+      signing-key-base64: ${AI_GATEWAY_SNAPSHOT_SIGNING_KEY_BASE64:}
+      outbox-batch-size: ${AI_GATEWAY_SNAPSHOT_OUTBOX_BATCH_SIZE:50}
+      outbox-lock-timeout-ms: ${AI_GATEWAY_SNAPSHOT_OUTBOX_LOCK_TIMEOUT_MS:30000}
+      outbox-projector-interval-ms: ${AI_GATEWAY_SNAPSHOT_OUTBOX_PROJECTOR_INTERVAL_MS:5000}
+      reproject-interval-ms: ${AI_GATEWAY_SNAPSHOT_REPROJECT_INTERVAL_MS:60000}
+      reproject-initial-delay-ms: ${AI_GATEWAY_SNAPSHOT_REPROJECT_INITIAL_DELAY_MS:10000}
+      history-retain-count: ${AI_GATEWAY_SNAPSHOT_HISTORY_RETAIN_COUNT:3}

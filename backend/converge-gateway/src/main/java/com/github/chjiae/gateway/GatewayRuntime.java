@@ -2,6 +2,7 @@ package com.github.chjiae.gateway;
 
 import com.github.chjiae.gateway.config.GatewayConfig;
 import com.github.chjiae.gateway.http.GatewayRouterFactory;
+import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -44,6 +45,9 @@ public class GatewayRuntime {
 
     /** HTTP Server */
     private HttpServer server;
+
+    /** 网关快照运行时 */
+    private GatewaySnapshotRuntime snapshotRuntime;
 
     private GatewayRuntime(Vertx vertx, GatewayConfig config, Instant startedAt, boolean enableTestFailureRoute) {
         this.vertx = vertx;
@@ -120,6 +124,10 @@ public class GatewayRuntime {
             server.shutdown(Duration.ofMillis(config.shutdownTimeoutMs()))
                     .onFailure(throwable -> log.warn("网关 HTTP Server 优雅关闭异常，将继续释放 Vert.x", throwable));
         }
+        if (snapshotRuntime != null) {
+            snapshotRuntime.close()
+                    .onFailure(throwable -> log.warn("网关快照运行时关闭异常，将继续释放 Vert.x", throwable));
+        }
         vertx.close().onComplete(result -> {
             if (completed.compareAndSet(false, true)) {
                 completePromise(closePromise, timeoutScheduler, result.succeeded(), result.cause());
@@ -134,7 +142,9 @@ public class GatewayRuntime {
      * @return 启动后的运行时
      */
     private Future<GatewayRuntime> startHttpServer() {
-        Router router = GatewayRouterFactory.create(vertx, config, startedAt, enableTestFailureRoute);
+        snapshotRuntime = new GatewaySnapshotRuntime(vertx, config.snapshotConfig());
+        snapshotRuntime.start();
+        Router router = GatewayRouterFactory.create(vertx, config, startedAt, snapshotRuntime, enableTestFailureRoute);
         Promise<GatewayRuntime> promise = Promise.promise();
         vertx.createHttpServer()
                 .requestHandler(router)

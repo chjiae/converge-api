@@ -50,6 +50,9 @@ public class AiExecutionResourceService {
     /** AI 目录租户守卫 */
     private final AiCatalogTenantGuard tenantGuard;
 
+    /** 网关快照变更记录器 */
+    private final GatewaySnapshotChangeRecorder snapshotChangeRecorder;
+
     /**
      * 创建可执行资源。
      * 校验四方一致性：resource.tenant_id = connection.tenant_id = credential.tenant_id = provider.tenant_id，
@@ -114,6 +117,7 @@ public class AiExecutionResourceService {
         resource.setUpdatedAt(now);
 
         aiExecutionResourceMapper.insert(resource);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_EXECUTION_RESOURCE_CHANGED);
 
         log.info("AI 可执行资源创建成功，租户 ID: {}，资源 ID: {}，编码: {}", tenantId, resource.getId(), resource.getCode());
         return toResponse(resource);
@@ -191,6 +195,7 @@ public class AiExecutionResourceService {
         resource.setDescription(request.getDescription());
         resource.setUpdatedAt(LocalDateTime.now());
         aiExecutionResourceMapper.updateById(resource);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_EXECUTION_RESOURCE_CHANGED);
 
         log.info("AI 可执行资源更新成功，租户 ID: {}，资源 ID: {}", tenantId, id);
         return toResponse(resource);
@@ -249,6 +254,7 @@ public class AiExecutionResourceService {
         resource.setAdminStatus(status);
         resource.setUpdatedAt(LocalDateTime.now());
         aiExecutionResourceMapper.updateById(resource);
+        snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_EXECUTION_RESOURCE_CHANGED);
 
         log.info("AI 可执行资源状态更新成功，租户 ID: {}，资源 ID: {}，状态: {}", tenantId, id, status);
         return toResponse(resource);
