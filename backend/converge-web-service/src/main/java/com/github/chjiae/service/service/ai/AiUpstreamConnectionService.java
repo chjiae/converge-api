@@ -208,13 +208,13 @@ public class AiUpstreamConnectionService {
     }
 
     /**
-     * 查询当前租户内连接实体。
+     * 查询当前租户内连接实体（包级私有，供同包其他 Service 校验使用）。
      *
      * @param tenantId 当前租户 ID
      * @param id       连接 ID
      * @return 连接实体
      */
-    private AiUpstreamConnection findConnectionOrThrow(Long tenantId, Long id) {
+    AiUpstreamConnection findConnectionOrThrow(Long tenantId, Long id) {
         AiUpstreamConnection connection = aiUpstreamConnectionMapper.selectOne(
                 new LambdaQueryWrapper<AiUpstreamConnection>()
                         .eq(AiUpstreamConnection::getTenantId, tenantId)

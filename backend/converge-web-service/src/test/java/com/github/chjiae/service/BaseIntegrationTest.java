@@ -52,6 +52,11 @@ public abstract class BaseIntegrationTest {
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
         registry.add("app.register-verification.expose-captcha-answer", () -> "true");
+
+        // AI 凭据加密测试密钥（仅用于测试，不可写入生产配置）
+        registry.add("ai.credential.encryption.active-key-id", () -> "test-key-v1");
+        registry.add("ai.credential.encryption.active-key-base64", () -> "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=");
+        registry.add("ai.credential.encryption.fingerprint-key-base64", () -> "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=");
     }
 
     @LocalServerPort

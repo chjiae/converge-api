@@ -80,3 +80,11 @@ auth:
 app:
   mail:
     from-name: ${MAIL_FROM_NAME:Converge API}
+
+# AI 凭据加密配置（密钥必须由环境变量提供，禁止硬编码到 Git 仓库）
+ai:
+  credential:
+    encryption:
+      active-key-id: ${AI_CREDENTIAL_ACTIVE_KEY_ID:}
+      active-key-base64: ${AI_CREDENTIAL_ACTIVE_KEY_BASE64:}
+      fingerprint-key-base64: ${AI_CREDENTIAL_FINGERPRINT_KEY_BASE64:}
