@@ -15,6 +15,13 @@
     <description>Common configurations, models, DTOs, utilities for Converge API</description>
 
     <dependencies>
+        <!-- Lombok 编译期注解处理 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
