@@ -1,7 +1,12 @@
 package com.github.chjiae.service.mapper.ai;
 
 import com.github.chjiae.service.service.ai.GatewaySnapshotExecutionResourceRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotModelBindingRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotPoolMemberRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotPublicModelRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotResourcePoolRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotRoutePolicyRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotRouteTargetRow;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
@@ -35,4 +40,44 @@ public interface GatewaySnapshotQueryMapper {
      * @return 执行资源快照行
      */
     List<GatewaySnapshotExecutionResourceRow> selectEligibleExecutionResources(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内资源池。
+     *
+     * @param tenantId 租户 ID
+     * @return 资源池快照行
+     */
+    List<GatewaySnapshotResourcePoolRow> selectResourcePools(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内资源池成员。
+     *
+     * @param tenantId 租户 ID
+     * @return 资源池成员快照行
+     */
+    List<GatewaySnapshotPoolMemberRow> selectResourcePoolMembers(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内资源模型绑定。
+     *
+     * @param tenantId 租户 ID
+     * @return 模型绑定快照行
+     */
+    List<GatewaySnapshotModelBindingRow> selectResourceModelBindings(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内路由策略。
+     *
+     * @param tenantId 租户 ID
+     * @return 路由策略快照行
+     */
+    List<GatewaySnapshotRoutePolicyRow> selectRoutePolicies(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内路由目标。
+     *
+     * @param tenantId 租户 ID
+     * @return 路由目标快照行
+     */
+    List<GatewaySnapshotRouteTargetRow> selectRouteTargets(@Param("tenantId") Long tenantId);
 }

@@ -6,8 +6,20 @@ package com.github.chjiae.contract.gateway;
  */
 public final class GatewaySnapshotSchema {
 
-    /** 当前支持的快照 schema 版本。 */
-    public static final int CURRENT_VERSION = 1;
+    /** 阶段 04 快照 schema 版本。 */
+    public static final int VERSION_1 = 1;
+
+    /** 阶段 05 静态路由快照 schema 版本。 */
+    public static final int VERSION_2 = 2;
+
+    /** 当前控制面发布的快照 schema 版本。 */
+    public static final int CURRENT_VERSION = VERSION_2;
+
+    /** 网关当前支持的最小快照 schema 版本。 */
+    public static final int MIN_SUPPORTED_VERSION = VERSION_1;
+
+    /** 网关当前支持的最大快照 schema 版本。 */
+    public static final int MAX_SUPPORTED_VERSION = VERSION_2;
 
     /** 秘密 envelope 的算法标识。 */
     public static final String SECRET_ALGORITHM = "AES-256-GCM";

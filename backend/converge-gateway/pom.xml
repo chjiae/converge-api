@@ -32,6 +32,10 @@
             <artifactId>converge-contract</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.github.chjiae</groupId>
+            <artifactId>converge-routing-core</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-core</artifactId>
         </dependency>

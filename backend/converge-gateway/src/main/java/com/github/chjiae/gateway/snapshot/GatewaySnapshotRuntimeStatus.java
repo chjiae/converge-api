@@ -10,6 +10,8 @@ import java.util.List;
  * @param state 同步状态
  * @param indexTenantCount Redis tenant index 中的租户数量
  * @param loadedTenantCount 本地已加载租户数量
+ * @param compiledRoutePlanCount 已编译静态路由计划数量
+ * @param invalidRouteTenantCount 最近存在静态路由错误的租户数量
  * @param lastSuccessfulReconcileEpochMillis 最近成功对账时间
  * @param latestErrorCategory 最近错误分类
  * @param tenants 本地租户 revision 摘要
@@ -18,6 +20,8 @@ public record GatewaySnapshotRuntimeStatus(
         GatewaySnapshotSyncState state,
         int indexTenantCount,
         int loadedTenantCount,
+        int compiledRoutePlanCount,
+        int invalidRouteTenantCount,
         long lastSuccessfulReconcileEpochMillis,
         String latestErrorCategory,
         List<TenantRevision> tenants
@@ -28,7 +32,9 @@ public record GatewaySnapshotRuntimeStatus(
      *
      * @param tenantId 租户 ID
      * @param revision 本地 revision
+     * @param schemaVersion 快照 schema 版本
+     * @param routePlanCount 已编译计划数量
      */
-    public record TenantRevision(String tenantId, long revision) {
+    public record TenantRevision(String tenantId, long revision, int schemaVersion, int routePlanCount) {
     }
 }

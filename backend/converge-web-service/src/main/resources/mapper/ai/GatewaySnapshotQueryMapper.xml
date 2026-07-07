@@ -54,4 +54,68 @@
           AND cred.admin_status = 'ENABLED'
         ORDER BY r.id ASC
     </select>
+
+    <select id="selectResourcePools" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotResourcePoolRow">
+        SELECT tenant_id AS tenantId,
+               id AS poolId,
+               code AS poolCode,
+               display_name AS displayName,
+               admin_status AS adminStatus,
+               selection_policy AS selectionPolicy
+        FROM ai_resource_pool
+        WHERE tenant_id = #{tenantId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectResourcePoolMembers" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotPoolMemberRow">
+        SELECT tenant_id AS tenantId,
+               resource_pool_id AS poolId,
+               execution_resource_id AS executionResourceId,
+               admin_status AS adminStatus,
+               priority,
+               weight
+        FROM ai_resource_pool_member
+        WHERE tenant_id = #{tenantId}
+        ORDER BY resource_pool_id ASC, priority DESC, id ASC
+    </select>
+
+    <select id="selectResourceModelBindings" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotModelBindingRow">
+        SELECT tenant_id AS tenantId,
+               execution_resource_id AS executionResourceId,
+               public_model_id AS publicModelId,
+               canonical_operation AS canonicalOperation,
+               upstream_model_name AS upstreamModelName,
+               admin_status AS adminStatus
+        FROM ai_resource_model_binding
+        WHERE tenant_id = #{tenantId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectRoutePolicies" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotRoutePolicyRow">
+        SELECT p.tenant_id AS tenantId,
+               p.id AS policyId,
+               p.public_model_id AS publicModelId,
+               m.code AS publicModelCode,
+               p.canonical_operation AS canonicalOperation,
+               p.admin_status AS adminStatus,
+               p.selection_policy AS selectionPolicy
+        FROM ai_route_policy p
+        INNER JOIN ai_public_model m
+                ON m.tenant_id = p.tenant_id
+               AND m.id = p.public_model_id
+        WHERE p.tenant_id = #{tenantId}
+        ORDER BY p.id ASC
+    </select>
+
+    <select id="selectRouteTargets" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotRouteTargetRow">
+        SELECT tenant_id AS tenantId,
+               route_policy_id AS policyId,
+               resource_pool_id AS poolId,
+               admin_status AS adminStatus,
+               priority,
+               weight
+        FROM ai_route_target
+        WHERE tenant_id = #{tenantId}
+        ORDER BY route_policy_id ASC, priority DESC, id ASC
+    </select>
 </mapper>

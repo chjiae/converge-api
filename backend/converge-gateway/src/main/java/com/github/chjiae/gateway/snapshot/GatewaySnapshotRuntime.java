@@ -9,6 +9,9 @@ import com.github.chjiae.contract.gateway.GatewaySnapshotSchema;
 import com.github.chjiae.contract.gateway.GatewaySnapshotSyncState;
 import com.github.chjiae.contract.gateway.GatewayTenantSnapshot;
 import com.github.chjiae.gateway.config.GatewaySnapshotConfig;
+import com.github.chjiae.routing.StaticRoutePlan;
+import com.github.chjiae.routing.StaticRouteValidationResult;
+import com.github.chjiae.routing.StaticTopologyValidator;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -81,6 +84,9 @@ public class GatewaySnapshotRuntime {
     /** 最近错误分类 */
     private volatile String latestErrorCategory;
 
+    /** 静态拓扑验证器 */
+    private final StaticTopologyValidator topologyValidator = new StaticTopologyValidator();
+
     /**
      * 创建网关快照运行时。
      *
@@ -134,10 +140,17 @@ public class GatewaySnapshotRuntime {
         Map<String, GatewayLoadedTenantSnapshot> snapshotMap = localSnapshots.get();
         List<GatewaySnapshotRuntimeStatus.TenantRevision> tenants = snapshotMap.entrySet().stream()
                 .map(entry -> new GatewaySnapshotRuntimeStatus.TenantRevision(entry.getKey(),
-                        entry.getValue().snapshot().revision()))
+                        entry.getValue().snapshot().revision(),
+                        entry.getValue().snapshot().schemaVersion(),
+                        entry.getValue().routePlans().size()))
                 .sorted(java.util.Comparator.comparing(GatewaySnapshotRuntimeStatus.TenantRevision::tenantId))
                 .toList();
+        int routePlanCount = snapshotMap.values().stream()
+                .mapToInt(loaded -> loaded.routePlans().size())
+                .sum();
+        int invalidRouteTenantCount = "STATIC_ROUTE_INVALID".equals(latestErrorCategory) ? 1 : 0;
         return new GatewaySnapshotRuntimeStatus(syncState(), indexTenantCount, snapshotMap.size(),
+                routePlanCount, invalidRouteTenantCount,
                 lastSuccessfulReconcileEpochMillis, latestErrorCategory, tenants);
     }
 
@@ -262,7 +275,8 @@ public class GatewaySnapshotRuntime {
      * 验证 Manifest。
      */
     private void validateManifest(GatewaySnapshotManifest manifest, String expectedTenantId) {
-        if (manifest.schemaVersion() != GatewaySnapshotSchema.CURRENT_VERSION) {
+        if (manifest.schemaVersion() < GatewaySnapshotSchema.MIN_SUPPORTED_VERSION
+                || manifest.schemaVersion() > GatewaySnapshotSchema.MAX_SUPPORTED_VERSION) {
             throw new GatewaySnapshotValidationException("SCHEMA_UNSUPPORTED", "Manifest schema 不兼容");
         }
         if (!expectedTenantId.equals(manifest.tenantId())) {
@@ -294,7 +308,8 @@ public class GatewaySnapshotRuntime {
         } catch (Exception e) {
             throw new GatewaySnapshotValidationException("PAYLOAD_JSON_INVALID", "Payload JSON 不合法");
         }
-        if (snapshot.schemaVersion() != GatewaySnapshotSchema.CURRENT_VERSION
+        if (snapshot.schemaVersion() < GatewaySnapshotSchema.MIN_SUPPORTED_VERSION
+                || snapshot.schemaVersion() > GatewaySnapshotSchema.MAX_SUPPORTED_VERSION
                 || !manifest.tenantId().equals(snapshot.tenantId())
                 || manifest.revision() != snapshot.revision()) {
             throw new GatewaySnapshotValidationException("TENANT_REVISION_MISMATCH", "Payload 与 Manifest 不匹配");
@@ -312,7 +327,29 @@ public class GatewaySnapshotRuntime {
                 throw new GatewaySnapshotValidationException("SECRET_DECRYPT_FAILED", "秘密 envelope 解封装失败");
             }
         }
-        return new GatewayLoadedTenantSnapshot(snapshot, secrets);
+        Map<String, StaticRoutePlan> routePlans = compileRoutePlans(snapshot);
+        return new GatewayLoadedTenantSnapshot(snapshot, secrets, routePlans);
+    }
+
+    /**
+     * 编译 V2 静态路由计划。
+     * V1 快照不包含路由拓扑，兼容加载但不会产生 route plan。
+     */
+    private Map<String, StaticRoutePlan> compileRoutePlans(GatewayTenantSnapshot snapshot) {
+        if (snapshot.schemaVersion() < GatewaySnapshotSchema.VERSION_2) {
+            return Map.of();
+        }
+        Map<String, StaticRoutePlan> plans = new HashMap<>();
+        List<StaticRouteValidationResult> results = topologyValidator.validateEnabledPolicies(snapshot);
+        for (StaticRouteValidationResult result : results) {
+            if (!result.valid()) {
+                throw new GatewaySnapshotValidationException("STATIC_ROUTE_INVALID",
+                        "静态路由拓扑校验失败: " + result.errorCategory());
+            }
+            StaticRoutePlan plan = result.plan();
+            plans.put(plan.publicModelCode() + "|" + plan.canonicalOperation(), plan);
+        }
+        return plans;
     }
 
     /**

@@ -62,6 +62,8 @@ public class InternalStatusHandler {
                 .put("service", config.serviceName())
                 .put("indexTenantCount", status.indexTenantCount())
                 .put("loadedTenantCount", status.loadedTenantCount())
+                .put("compiledRoutePlanCount", status.compiledRoutePlanCount())
+                .put("invalidRouteTenantCount", status.invalidRouteTenantCount())
                 .put("lastSuccessfulReconcileEpochMillis", status.lastSuccessfulReconcileEpochMillis())
                 .put("latestErrorCategory", status.latestErrorCategory());
         if (status.state() == GatewaySnapshotSyncState.NOT_READY) {
@@ -81,11 +83,15 @@ public class InternalStatusHandler {
         io.vertx.core.json.JsonArray tenants = new io.vertx.core.json.JsonArray();
         status.tenants().forEach(tenant -> tenants.add(new JsonObject()
                 .put("tenantId", tenant.tenantId())
-                .put("revision", tenant.revision())));
+                .put("revision", tenant.revision())
+                .put("schemaVersion", tenant.schemaVersion())
+                .put("routePlanCount", tenant.routePlanCount())));
         JsonObject data = new JsonObject()
                 .put("status", status.state().name())
                 .put("indexTenantCount", status.indexTenantCount())
                 .put("loadedTenantCount", status.loadedTenantCount())
+                .put("compiledRoutePlanCount", status.compiledRoutePlanCount())
+                .put("invalidRouteTenantCount", status.invalidRouteTenantCount())
                 .put("lastSuccessfulReconcileEpochMillis", status.lastSuccessfulReconcileEpochMillis())
                 .put("latestErrorCategory", status.latestErrorCategory())
                 .put("tenants", tenants);

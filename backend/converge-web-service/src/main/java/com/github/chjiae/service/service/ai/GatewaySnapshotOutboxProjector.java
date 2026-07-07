@@ -3,6 +3,11 @@ package com.github.chjiae.service.service.ai;
 import com.github.chjiae.common.enums.AiCredentialType;
 import com.github.chjiae.contract.gateway.GatewayExecutionResourceSnapshot;
 import com.github.chjiae.contract.gateway.GatewayPublicModelSnapshot;
+import com.github.chjiae.contract.gateway.GatewayResourceModelBindingSnapshot;
+import com.github.chjiae.contract.gateway.GatewayResourcePoolMemberSnapshot;
+import com.github.chjiae.contract.gateway.GatewayResourcePoolSnapshot;
+import com.github.chjiae.contract.gateway.GatewayRoutePolicySnapshot;
+import com.github.chjiae.contract.gateway.GatewayRouteTargetSnapshot;
 import com.github.chjiae.contract.gateway.GatewaySecretEnvelope;
 import com.github.chjiae.contract.gateway.GatewaySnapshotChangedEvent;
 import com.github.chjiae.contract.gateway.GatewaySnapshotCrypto;
@@ -161,6 +166,9 @@ public class GatewaySnapshotOutboxProjector {
 
         List<GatewayPublicModelSnapshot> publicModels = new ArrayList<>();
         List<GatewayExecutionResourceSnapshot> executionResources = new ArrayList<>();
+        List<GatewayResourcePoolSnapshot> resourcePools = new ArrayList<>();
+        List<GatewayResourceModelBindingSnapshot> resourceModelBindings = new ArrayList<>();
+        List<GatewayRoutePolicySnapshot> routePolicies = new ArrayList<>();
         if (!EMPTY_SNAPSHOT_TENANT_STATUSES.contains(tenantStatus)) {
             publicModels.addAll(snapshotQueryMapper.selectEnabledPublicModels(tenantId).stream()
                     .map(row -> new GatewayPublicModelSnapshot(
@@ -174,10 +182,41 @@ public class GatewaySnapshotOutboxProjector {
                     .sorted(Comparator.comparing(GatewaySnapshotExecutionResourceRow::getResourceId))
                     .map(row -> toExecutionResourceSnapshot(row, revision))
                     .toList());
+            Map<Long, List<GatewaySnapshotPoolMemberRow>> membersByPool = snapshotQueryMapper
+                    .selectResourcePoolMembers(tenantId).stream()
+                    .collect(Collectors.groupingBy(GatewaySnapshotPoolMemberRow::getPoolId));
+            resourcePools.addAll(snapshotQueryMapper.selectResourcePools(tenantId).stream()
+                    .map(row -> new GatewayResourcePoolSnapshot(tenantIdString, row.getPoolId().toString(),
+                            row.getPoolCode(), row.getDisplayName(), row.getAdminStatus(), row.getSelectionPolicy(),
+                            membersByPool.getOrDefault(row.getPoolId(), List.of()).stream()
+                                    .map(member -> new GatewayResourcePoolMemberSnapshot(tenantIdString,
+                                            member.getPoolId().toString(), member.getExecutionResourceId().toString(),
+                                            member.getAdminStatus(), member.getPriority(), member.getWeight()))
+                                    .toList()))
+                    .toList());
+            resourceModelBindings.addAll(snapshotQueryMapper.selectResourceModelBindings(tenantId).stream()
+                    .map(row -> new GatewayResourceModelBindingSnapshot(tenantIdString,
+                            row.getExecutionResourceId().toString(), row.getPublicModelId().toString(),
+                            row.getCanonicalOperation(), row.getUpstreamModelName(), row.getAdminStatus()))
+                    .toList());
+            Map<Long, List<GatewaySnapshotRouteTargetRow>> targetsByPolicy = snapshotQueryMapper
+                    .selectRouteTargets(tenantId).stream()
+                    .collect(Collectors.groupingBy(GatewaySnapshotRouteTargetRow::getPolicyId));
+            routePolicies.addAll(snapshotQueryMapper.selectRoutePolicies(tenantId).stream()
+                    .map(row -> new GatewayRoutePolicySnapshot(tenantIdString, row.getPolicyId().toString(),
+                            row.getPublicModelId().toString(), row.getPublicModelCode(),
+                            row.getCanonicalOperation(), row.getAdminStatus(), row.getSelectionPolicy(),
+                            targetsByPolicy.getOrDefault(row.getPolicyId(), List.of()).stream()
+                                    .map(target -> new GatewayRouteTargetSnapshot(tenantIdString,
+                                            target.getPolicyId().toString(), target.getPoolId().toString(),
+                                            target.getAdminStatus(), target.getPriority(), target.getWeight()))
+                                    .toList()))
+                    .toList());
         }
 
         GatewayTenantSnapshot snapshot = new GatewayTenantSnapshot(GatewaySnapshotSchema.CURRENT_VERSION,
-                tenantIdString, revision, System.currentTimeMillis(), publicModels, executionResources);
+                tenantIdString, revision, System.currentTimeMillis(), publicModels, executionResources,
+                resourcePools, resourceModelBindings, routePolicies);
         byte[] payloadBytes = GatewaySnapshotJson.toBytes(snapshot);
         String payloadKey = GatewaySnapshotRedisKeys.payloadKey(tenantIdString, revision);
         String payloadSha256 = GatewaySnapshotCrypto.sha256Hex(payloadBytes);

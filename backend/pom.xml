@@ -20,6 +20,7 @@
 
     <modules>
         <module>converge-contract</module>
+        <module>converge-routing-core</module>
         <module>converge-common</module>
         <module>converge-web-service</module>
         <module>converge-gateway</module>
@@ -43,6 +44,11 @@
             <dependency>
                 <groupId>com.github.chjiae</groupId>
                 <artifactId>converge-contract</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.chjiae</groupId>
+                <artifactId>converge-routing-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>
