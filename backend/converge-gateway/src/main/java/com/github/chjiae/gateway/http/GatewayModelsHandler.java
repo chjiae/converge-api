@@ -1,6 +1,5 @@
 package com.github.chjiae.gateway.http;
 
-import com.github.chjiae.contract.gateway.GatewayClientKeyAuthenticationResult;
 import com.github.chjiae.contract.gateway.GatewayClientPrincipal;
 import com.github.chjiae.contract.gateway.GatewaySnapshotSyncState;
 import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
@@ -18,6 +17,9 @@ public class GatewayModelsHandler {
     /** 网关快照运行时 */
     private final GatewaySnapshotRuntime snapshotRuntime;
 
+    /** 数据面认证器 */
+    private final GatewayDataPlaneAuthenticator authenticator;
+
     /**
      * 创建模型列表处理器。
      *
@@ -25,6 +27,7 @@ public class GatewayModelsHandler {
      */
     public GatewayModelsHandler(GatewaySnapshotRuntime snapshotRuntime) {
         this.snapshotRuntime = snapshotRuntime;
+        this.authenticator = new GatewayDataPlaneAuthenticator(snapshotRuntime);
     }
 
     /**
@@ -35,21 +38,16 @@ public class GatewayModelsHandler {
     public void handle(RoutingContext context) {
         GatewaySnapshotRuntimeStatus status = snapshotRuntime.status();
         if (status.state() == GatewaySnapshotSyncState.NOT_READY) {
-            writeError(context, 503, "gateway_not_ready", "Gateway not ready");
+            GatewayDataPlaneResponses.writeError(context, 503, "gateway_not_ready", "Gateway not ready");
             return;
         }
 
-        String rawKey = extractBearerKey(context);
-        GatewayClientKeyAuthenticationResult result = snapshotRuntime.authenticateClientKey(rawKey);
-        if (!result.authenticated()) {
-            context.response().putHeader("www-authenticate", "Bearer");
-            writeError(context, 401, "invalid_api_key", "Invalid API key");
+        GatewayClientPrincipal principal = authenticator.authenticate(context);
+        if (principal == null) {
             return;
         }
-
-        GatewayClientPrincipal principal = result.principal();
         if (principal.effectiveGrants().isEmpty()) {
-            writeError(context, 403, "access_denied", "Access denied");
+            GatewayDataPlaneResponses.writeError(context, 403, "access_denied", "Access denied");
             return;
         }
 
@@ -58,27 +56,5 @@ public class GatewayModelsHandler {
                 .setStatusCode(200)
                 .putHeader("content-type", GatewayDataPlaneResponses.JSON_CONTENT_TYPE)
                 .end(GatewayDataPlaneResponses.models(modelCodes).encode());
-    }
-
-    private String extractBearerKey(RoutingContext context) {
-        String authorization = context.request().getHeader("Authorization");
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            return null;
-        }
-        String rawKey = authorization.substring("Bearer ".length());
-        if (rawKey.isBlank() || rawKey.contains(" ")) {
-            return null;
-        }
-        return rawKey;
-    }
-
-    private void writeError(RoutingContext context, int statusCode, String code, String message) {
-        if (context.response().ended()) {
-            return;
-        }
-        context.response()
-                .setStatusCode(statusCode)
-                .putHeader("content-type", GatewayDataPlaneResponses.JSON_CONTENT_TYPE)
-                .end(GatewayDataPlaneResponses.error(code, message).encode());
     }
 }

@@ -15,6 +15,7 @@ import java.util.Map;
  * @param serviceName       服务名称
  * @param buildVersion      构建版本
  * @param snapshotConfig    快照同步配置
+ * @param executionConfig   上游执行配置
  */
 public record GatewayConfig(
         String host,
@@ -22,7 +23,8 @@ public record GatewayConfig(
         long shutdownTimeoutMs,
         String serviceName,
         String buildVersion,
-        GatewaySnapshotConfig snapshotConfig
+        GatewaySnapshotConfig snapshotConfig,
+        GatewayExecutionConfig executionConfig
 ) {
 
     /** 默认监听地址 */
@@ -59,6 +61,25 @@ public record GatewayConfig(
         if (snapshotConfig == null) {
             throw new IllegalArgumentException("网关快照配置不能为空");
         }
+        if (executionConfig == null) {
+            throw new IllegalArgumentException("网关执行配置不能为空");
+        }
+    }
+
+    /**
+     * 兼容旧测试和旧调用点的构造器，未传执行配置时使用默认值。
+     *
+     * @param host HTTP 监听地址
+     * @param port HTTP 监听端口
+     * @param shutdownTimeoutMs 优雅关闭等待时间，单位毫秒
+     * @param serviceName 服务名称
+     * @param buildVersion 构建版本
+     * @param snapshotConfig 快照同步配置
+     */
+    public GatewayConfig(String host, int port, long shutdownTimeoutMs, String serviceName,
+                         String buildVersion, GatewaySnapshotConfig snapshotConfig) {
+        this(host, port, shutdownTimeoutMs, serviceName, buildVersion,
+                snapshotConfig, GatewayExecutionConfig.defaults());
     }
 
     /**
@@ -106,7 +127,38 @@ public record GatewayConfig(
                                 "gateway.snapshot.history-retain-count", "3"),
                         "网关快照历史保留数量必须是大于 0 的整数")
         );
-        return new GatewayConfig(host, port, shutdownTimeoutMs, serviceName, buildVersion, snapshotConfig);
+        GatewayExecutionConfig executionConfig = new GatewayExecutionConfig(
+                parsePositiveLong(read(properties, environment, "GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS",
+                                "gateway.upstream.connect-timeout-ms",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_UPSTREAM_CONNECT_TIMEOUT_MS)),
+                        "网关上游连接超时时间必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_UPSTREAM_IDLE_TIMEOUT_MS",
+                                "gateway.upstream.idle-timeout-ms",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_UPSTREAM_IDLE_TIMEOUT_MS)),
+                        "网关上游空闲超时时间必须是大于 0 的整数"),
+                (int) parsePositiveLong(read(properties, environment, "GATEWAY_UPSTREAM_POOL_MAX_SIZE",
+                                "gateway.upstream.pool-max-size",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_UPSTREAM_POOL_MAX_SIZE)),
+                        "网关上游连接池大小必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_OPENAI_MAX_REQUEST_BYTES",
+                                "gateway.openai.max-request-bytes",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_OPENAI_MAX_REQUEST_BYTES)),
+                        "OpenAI 请求体上限必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_OPENAI_MAX_NON_STREAM_RESPONSE_BYTES",
+                                "gateway.openai.max-non-stream-response-bytes",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_OPENAI_MAX_NON_STREAM_RESPONSE_BYTES)),
+                        "OpenAI 非流式响应上限必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_OPENAI_MAX_ERROR_RESPONSE_BYTES",
+                                "gateway.openai.max-error-response-bytes",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_OPENAI_MAX_ERROR_RESPONSE_BYTES)),
+                        "OpenAI 错误响应读取上限必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_OPENAI_MAX_SSE_EVENT_BYTES",
+                                "gateway.openai.max-sse-event-bytes",
+                                String.valueOf(GatewayExecutionConfig.DEFAULT_OPENAI_MAX_SSE_EVENT_BYTES)),
+                        "OpenAI SSE event 上限必须是大于 0 的整数")
+        );
+        return new GatewayConfig(host, port, shutdownTimeoutMs, serviceName, buildVersion,
+                snapshotConfig, executionConfig);
     }
 
     /**

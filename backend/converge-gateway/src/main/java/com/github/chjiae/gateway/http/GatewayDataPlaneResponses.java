@@ -52,4 +52,22 @@ final class GatewayDataPlaneResponses {
                         .put("param", null)
                         .put("code", code));
     }
+
+    /**
+     * 写入数据面错误响应。
+     *
+     * @param context 路由上下文
+     * @param statusCode HTTP 状态码
+     * @param code 错误码
+     * @param message 错误消息
+     */
+    static void writeError(io.vertx.ext.web.RoutingContext context, int statusCode, String code, String message) {
+        if (context.response().ended()) {
+            return;
+        }
+        context.response()
+                .setStatusCode(statusCode)
+                .putHeader("content-type", JSON_CONTENT_TYPE)
+                .end(error(code, message).encode());
+    }
 }

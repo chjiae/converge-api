@@ -1,6 +1,7 @@
 package com.github.chjiae.gateway;
 
 import com.github.chjiae.gateway.config.GatewayConfig;
+import com.github.chjiae.gateway.execution.GatewayExecutionRuntime;
 import com.github.chjiae.gateway.http.GatewayRouterFactory;
 import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
 import io.vertx.core.Future;
@@ -48,6 +49,9 @@ public class GatewayRuntime {
 
     /** 网关快照运行时 */
     private GatewaySnapshotRuntime snapshotRuntime;
+
+    /** 网关上游执行运行时 */
+    private GatewayExecutionRuntime executionRuntime;
 
     private GatewayRuntime(Vertx vertx, GatewayConfig config, Instant startedAt, boolean enableTestFailureRoute) {
         this.vertx = vertx;
@@ -120,15 +124,15 @@ public class GatewayRuntime {
             }
         }, config.shutdownTimeoutMs() + 1000, TimeUnit.MILLISECONDS);
 
-        if (server != null) {
-            server.shutdown(Duration.ofMillis(config.shutdownTimeoutMs()))
-                    .onFailure(throwable -> log.warn("网关 HTTP Server 优雅关闭异常，将继续释放 Vert.x", throwable));
+        if (executionRuntime != null) {
+            executionRuntime.beginDrain();
         }
-        if (snapshotRuntime != null) {
-            snapshotRuntime.close()
-                    .onFailure(throwable -> log.warn("网关快照运行时关闭异常，将继续释放 Vert.x", throwable));
-        }
-        vertx.close().onComplete(result -> {
+
+        closeHttpServer()
+                .compose(ignored -> closeExecutionRuntime())
+                .compose(ignored -> closeSnapshotRuntime())
+                .compose(ignored -> vertx.close())
+                .onComplete(result -> {
             if (completed.compareAndSet(false, true)) {
                 completePromise(closePromise, timeoutScheduler, result.succeeded(), result.cause());
             }
@@ -143,8 +147,10 @@ public class GatewayRuntime {
      */
     private Future<GatewayRuntime> startHttpServer() {
         snapshotRuntime = new GatewaySnapshotRuntime(vertx, config.snapshotConfig());
+        executionRuntime = new GatewayExecutionRuntime(vertx, config.executionConfig(), config.buildVersion());
         snapshotRuntime.start();
-        Router router = GatewayRouterFactory.create(vertx, config, startedAt, snapshotRuntime, enableTestFailureRoute);
+        Router router = GatewayRouterFactory.create(vertx, config, startedAt,
+                snapshotRuntime, executionRuntime, enableTestFailureRoute);
         Promise<GatewayRuntime> promise = Promise.promise();
         vertx.createHttpServer()
                 .requestHandler(router)
@@ -161,6 +167,51 @@ public class GatewayRuntime {
                     promise.fail(throwable);
                 });
         return promise.future();
+    }
+
+    private Future<Void> closeHttpServer() {
+        if (server == null) {
+            return Future.succeededFuture();
+        }
+        Promise<Void> promise = Promise.promise();
+        AtomicBoolean completed = new AtomicBoolean(false);
+        long timerId = vertx.setTimer(config.shutdownTimeoutMs(), ignored -> server.close().onComplete(result -> {
+            if (completed.compareAndSet(false, true)) {
+                if (result.failed()) {
+                    log.warn("网关 HTTP Server 强制关闭异常，将继续释放后续资源", result.cause());
+                }
+                promise.complete();
+            }
+        }));
+        server.shutdown(Duration.ofMillis(config.shutdownTimeoutMs()))
+                .onComplete(result -> {
+                    if (completed.compareAndSet(false, true)) {
+                        vertx.cancelTimer(timerId);
+                        if (result.failed()) {
+                            log.warn("网关 HTTP Server 优雅关闭异常，将继续释放后续资源", result.cause());
+                        }
+                        promise.complete();
+                    }
+                });
+        return promise.future();
+    }
+
+    private Future<Void> closeExecutionRuntime() {
+        if (executionRuntime == null) {
+            return Future.succeededFuture();
+        }
+        return executionRuntime.close(Duration.ofMillis(config.shutdownTimeoutMs()))
+                .onFailure(throwable -> log.warn("网关执行运行时关闭异常，将继续释放后续资源", throwable))
+                .recover(throwable -> Future.succeededFuture());
+    }
+
+    private Future<Void> closeSnapshotRuntime() {
+        if (snapshotRuntime == null) {
+            return Future.succeededFuture();
+        }
+        return snapshotRuntime.close()
+                .onFailure(throwable -> log.warn("网关快照运行时关闭异常，将继续释放 Vert.x", throwable))
+                .recover(throwable -> Future.succeededFuture());
     }
 
     /**

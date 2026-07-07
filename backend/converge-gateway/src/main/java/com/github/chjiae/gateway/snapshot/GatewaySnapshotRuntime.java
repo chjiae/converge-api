@@ -17,6 +17,8 @@ import com.github.chjiae.contract.gateway.GatewaySnapshotSyncState;
 import com.github.chjiae.contract.gateway.GatewayTenantSnapshot;
 import com.github.chjiae.gateway.config.GatewaySnapshotConfig;
 import com.github.chjiae.routing.StaticRoutePlan;
+import com.github.chjiae.routing.StaticRouteRequestSelector;
+import com.github.chjiae.routing.StaticRouteSelection;
 import com.github.chjiae.routing.StaticRouteValidationResult;
 import com.github.chjiae.routing.StaticTopologyValidator;
 import io.vertx.core.Future;
@@ -100,6 +102,9 @@ public class GatewaySnapshotRuntime {
 
     /** 静态拓扑验证器 */
     private final StaticTopologyValidator topologyValidator = new StaticTopologyValidator();
+
+    /** 真实请求静态选择器 */
+    private final StaticRouteRequestSelector requestSelector = new StaticRouteRequestSelector();
 
     /**
      * 创建网关快照运行时。
@@ -218,6 +223,77 @@ public class GatewaySnapshotRuntime {
         return codes.stream()
                 .sorted()
                 .toList();
+    }
+
+    /**
+     * 解析 OpenAI Chat Completions 执行目标。
+     * 只读取本地快照、路由计划和已解封装 runtime secret，不访问 Redis 或数据库。
+     *
+     * @param principal 已认证主体
+     * @param publicModelCode 下游公开模型编码
+     * @param requestId 请求 ID，用于构造安全选择 seed
+     * @return OpenAI 执行目标
+     */
+    public GatewayOpenAiExecutionTarget resolveOpenAiChatExecution(GatewayClientPrincipal principal,
+                                                                   String publicModelCode,
+                                                                   String requestId) {
+        if (syncState() == GatewaySnapshotSyncState.NOT_READY) {
+            throw new GatewayOpenAiExecutionException(503, "gateway_not_ready", "Gateway not ready");
+        }
+        if (!hasGrant(principal, publicModelCode, "CHAT_COMPLETIONS")) {
+            throw new GatewayOpenAiExecutionException(403, "model_access_denied", "Model access denied");
+        }
+        GatewayLoadedTenantSnapshot loaded = localSnapshots.get().get(principal.tenantId());
+        if (loaded == null) {
+            throw new GatewayOpenAiExecutionException(404, "model_not_found", "Model not found");
+        }
+        String routeKey = publicModelCode + "|CHAT_COMPLETIONS";
+        StaticRoutePlan plan = loaded.routePlans().get(routeKey);
+        if (plan == null) {
+            throw new GatewayOpenAiExecutionException(404, "model_not_found", "Model not found");
+        }
+        String seed = requestId + "|" + principal.tenantId() + "|" + publicModelCode
+                + "|CHAT_COMPLETIONS|" + loaded.snapshot().revision();
+        StaticRouteSelection selection = requestSelector.select(plan, seed);
+        GatewayExecutionResourceSnapshot resource = findResource(loaded.snapshot(), selection.executionResourceId());
+        if (resource == null) {
+            throw new GatewayOpenAiExecutionException(502, "upstream_protocol_error", "Upstream protocol error");
+        }
+        if (!"DIRECT_API".equals(resource.resourceType())
+                || !"OPENAI_COMPATIBLE".equals(resource.protocolType())
+                || !"ENABLED".equals(resource.adminStatus())) {
+            throw new GatewayOpenAiExecutionException(502, "upstream_protocol_error", "Upstream protocol error");
+        }
+        String runtimeSecret = loaded.runtimeSecrets().get(resource.resourceId());
+        if (runtimeSecret == null || runtimeSecret.isBlank()) {
+            throw new GatewayOpenAiExecutionException(502, "upstream_protocol_error", "Upstream protocol error");
+        }
+        try {
+            return new GatewayOpenAiExecutionTarget(loaded.snapshot().tenantId(), publicModelCode,
+                    loaded.snapshot().revision(), selection.routePolicyId(), resource.resourceId(),
+                    resource.baseUrl(), selection.upstreamModelName(), runtimeSecret);
+        } catch (IllegalArgumentException e) {
+            throw new GatewayOpenAiExecutionException(502, "upstream_protocol_error", "Upstream protocol error");
+        }
+    }
+
+    private boolean hasGrant(GatewayClientPrincipal principal, String publicModelCode, String operation) {
+        for (GatewayAccessGroupModelGrantSnapshot grant : principal.effectiveGrants()) {
+            if (publicModelCode.equals(grant.publicModelCode())
+                    && operation.equals(grant.canonicalOperation())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private GatewayExecutionResourceSnapshot findResource(GatewayTenantSnapshot snapshot, String executionResourceId) {
+        for (GatewayExecutionResourceSnapshot resource : snapshot.executionResources()) {
+            if (executionResourceId.equals(resource.resourceId())) {
+                return resource;
+            }
+        }
+        return null;
     }
 
     /**
