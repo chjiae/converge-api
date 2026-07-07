@@ -1,6 +1,10 @@
 package com.github.chjiae.service.mapper.ai;
 
 import com.github.chjiae.service.service.ai.GatewaySnapshotExecutionResourceRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotAccessGroupModelGrantRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotAccessGroupRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotClientApiKeyAccessGroupRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotClientApiKeyRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotModelBindingRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotPoolMemberRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotPublicModelRow;
@@ -80,4 +84,36 @@ public interface GatewaySnapshotQueryMapper {
      * @return 路由目标快照行
      */
     List<GatewaySnapshotRouteTargetRow> selectRouteTargets(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内访问组。
+     *
+     * @param tenantId 租户 ID
+     * @return 访问组快照行
+     */
+    List<GatewaySnapshotAccessGroupRow> selectAccessGroups(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内访问组模型授权。
+     *
+     * @param tenantId 租户 ID
+     * @return 授权快照行
+     */
+    List<GatewaySnapshotAccessGroupModelGrantRow> selectAccessGroupModelGrants(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内 Client API Key verifier 元数据。
+     *
+     * @param tenantId 租户 ID
+     * @return Client API Key 快照行
+     */
+    List<GatewaySnapshotClientApiKeyRow> selectClientApiKeys(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内 Client API Key 访问组绑定。
+     *
+     * @param tenantId 租户 ID
+     * @return 绑定快照行
+     */
+    List<GatewaySnapshotClientApiKeyAccessGroupRow> selectClientApiKeyAccessGroups(@Param("tenantId") Long tenantId);
 }

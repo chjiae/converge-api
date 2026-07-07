@@ -1,6 +1,13 @@
 package com.github.chjiae.gateway.snapshot;
 
 import com.github.chjiae.contract.gateway.GatewayExecutionResourceSnapshot;
+import com.github.chjiae.contract.gateway.GatewayAccessGroupModelGrantSnapshot;
+import com.github.chjiae.contract.gateway.GatewayAccessGroupSnapshot;
+import com.github.chjiae.contract.gateway.GatewayClientApiKeyAccessGroupSnapshot;
+import com.github.chjiae.contract.gateway.GatewayClientApiKeySnapshot;
+import com.github.chjiae.contract.gateway.GatewayClientKeyAuthenticationResult;
+import com.github.chjiae.contract.gateway.GatewayClientKeyCrypto;
+import com.github.chjiae.contract.gateway.GatewayClientPrincipal;
 import com.github.chjiae.contract.gateway.GatewaySnapshotCrypto;
 import com.github.chjiae.contract.gateway.GatewaySnapshotJson;
 import com.github.chjiae.contract.gateway.GatewaySnapshotManifest;
@@ -27,7 +34,10 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +65,10 @@ public class GatewaySnapshotRuntime {
 
     /** 本地租户快照 */
     private final AtomicReference<Map<String, GatewayLoadedTenantSnapshot>> localSnapshots =
+            new AtomicReference<>(Map.of());
+
+    /** 全局 Client API Key 索引，key 为 keyId */
+    private final AtomicReference<Map<String, GatewayClientKeyIndexEntry>> clientKeyIndex =
             new AtomicReference<>(Map.of());
 
     /** 命令连接 */
@@ -142,16 +156,68 @@ public class GatewaySnapshotRuntime {
                 .map(entry -> new GatewaySnapshotRuntimeStatus.TenantRevision(entry.getKey(),
                         entry.getValue().snapshot().revision(),
                         entry.getValue().snapshot().schemaVersion(),
-                        entry.getValue().routePlans().size()))
+                        entry.getValue().routePlans().size(),
+                        entry.getValue().snapshot().clientApiKeys().size()))
                 .sorted(java.util.Comparator.comparing(GatewaySnapshotRuntimeStatus.TenantRevision::tenantId))
                 .toList();
         int routePlanCount = snapshotMap.values().stream()
                 .mapToInt(loaded -> loaded.routePlans().size())
                 .sum();
+        int loadedClientKeyCount = clientKeyIndex.get().size();
         int invalidRouteTenantCount = "STATIC_ROUTE_INVALID".equals(latestErrorCategory) ? 1 : 0;
         return new GatewaySnapshotRuntimeStatus(syncState(), indexTenantCount, snapshotMap.size(),
-                routePlanCount, invalidRouteTenantCount,
+                routePlanCount, loadedClientKeyCount, invalidRouteTenantCount,
                 lastSuccessfulReconcileEpochMillis, latestErrorCategory, tenants);
+    }
+
+    /**
+     * 认证 Client API Key。
+     *
+     * @param rawKey 请求中的 raw key
+     * @return 认证结果
+     */
+    public GatewayClientKeyAuthenticationResult authenticateClientKey(String rawKey) {
+        GatewayClientKeyCrypto.ParsedClientKey parsed = GatewayClientKeyCrypto.parse(rawKey);
+        if (!parsed.valid()) {
+            return GatewayClientKeyAuthenticationResult.failure("invalid_api_key");
+        }
+        GatewayClientKeyIndexEntry entry = clientKeyIndex.get().get(parsed.keyId());
+        if (entry == null || !"ENABLED".equals(entry.adminStatus())) {
+            return GatewayClientKeyAuthenticationResult.failure("invalid_api_key");
+        }
+        long expiresAt = entry.expiresAtEpochMillis();
+        if (expiresAt > 0 && System.currentTimeMillis() >= expiresAt) {
+            return GatewayClientKeyAuthenticationResult.failure("invalid_api_key");
+        }
+        boolean verified = GatewayClientKeyCrypto.verify(rawKey, entry.keyId(), entry.keyVersion(),
+                entry.salt(), entry.verifierHash());
+        if (!verified) {
+            return GatewayClientKeyAuthenticationResult.failure("invalid_api_key");
+        }
+        return GatewayClientKeyAuthenticationResult.success(entry.principal());
+    }
+
+    /**
+     * 查询主体可访问且具备静态路由计划的公开模型编码。
+     *
+     * @param principal 已认证主体
+     * @return 模型编码列表
+     */
+    public List<String> authorizedModelCodes(GatewayClientPrincipal principal) {
+        GatewayLoadedTenantSnapshot loaded = localSnapshots.get().get(principal.tenantId());
+        if (loaded == null) {
+            return List.of();
+        }
+        Set<String> codes = new HashSet<>();
+        for (GatewayAccessGroupModelGrantSnapshot grant : principal.effectiveGrants()) {
+            String routeKey = grant.publicModelCode() + "|" + grant.canonicalOperation();
+            if (loaded.routePlans().containsKey(routeKey)) {
+                codes.add(grant.publicModelCode());
+            }
+        }
+        return codes.stream()
+                .sorted()
+                .toList();
     }
 
     /**
@@ -194,6 +260,7 @@ public class GatewaySnapshotRuntime {
     private Future<Void> loadAllTenants(Set<String> tenantIds) {
         if (tenantIds.isEmpty()) {
             localSnapshots.set(Map.of());
+            clientKeyIndex.set(Map.of());
             return Future.succeededFuture();
         }
         Promise<Void> promise = Promise.promise();
@@ -213,7 +280,9 @@ public class GatewaySnapshotRuntime {
                                         List<Throwable> failures,
                                         Promise<Void> promise) {
         if (index >= tenantIds.size()) {
-            localSnapshots.set(Map.copyOf(next));
+            Map<String, GatewayLoadedTenantSnapshot> immutableNext = Map.copyOf(next);
+            localSnapshots.set(immutableNext);
+            clientKeyIndex.set(buildClientKeyIndex(immutableNext));
             if (failures.isEmpty()) {
                 promise.complete();
             } else {
@@ -328,6 +397,7 @@ public class GatewaySnapshotRuntime {
             }
         }
         Map<String, StaticRoutePlan> routePlans = compileRoutePlans(snapshot);
+        validateClientAccess(snapshot);
         return new GatewayLoadedTenantSnapshot(snapshot, secrets, routePlans);
     }
 
@@ -350,6 +420,100 @@ public class GatewaySnapshotRuntime {
             plans.put(plan.publicModelCode() + "|" + plan.canonicalOperation(), plan);
         }
         return plans;
+    }
+
+    /**
+     * 校验 V3 Client API Key verifier 元数据。
+     */
+    private void validateClientAccess(GatewayTenantSnapshot snapshot) {
+        if (snapshot.schemaVersion() < GatewaySnapshotSchema.VERSION_3) {
+            return;
+        }
+        for (GatewayClientApiKeySnapshot key : snapshot.clientApiKeys()) {
+            if (!GatewayClientKeyCrypto.HASH_ALGORITHM.equals(key.secretHashAlgorithm())) {
+                throw new GatewaySnapshotValidationException("CLIENT_ACCESS_INVALID", "Client API Key 摘要算法不支持");
+            }
+            byte[] salt = decodeVerifierBytes(key.secretVerifierSaltBase64(),
+                    GatewayClientKeyCrypto.SALT_BYTES, "CLIENT_ACCESS_INVALID");
+            byte[] hash = decodeVerifierBytes(key.secretVerifierHashBase64(),
+                    GatewayClientKeyCrypto.HASH_BYTES, "CLIENT_ACCESS_INVALID");
+            if (key.keyId() == null || key.keyId().isBlank()
+                    || key.clientApiKeyId() == null || key.clientApiKeyId().isBlank()
+                    || key.keyVersion() < 1
+                    || salt.length != GatewayClientKeyCrypto.SALT_BYTES
+                    || hash.length != GatewayClientKeyCrypto.HASH_BYTES) {
+                throw new GatewaySnapshotValidationException("CLIENT_ACCESS_INVALID", "Client API Key verifier 元数据不合法");
+            }
+        }
+    }
+
+    /**
+     * 从已验证快照构建全局 Client API Key 索引。
+     */
+    private Map<String, GatewayClientKeyIndexEntry> buildClientKeyIndex(
+            Map<String, GatewayLoadedTenantSnapshot> snapshots) {
+        Map<String, GatewayClientKeyIndexEntry> nextIndex = new HashMap<>();
+        for (GatewayLoadedTenantSnapshot loaded : snapshots.values()) {
+            GatewayTenantSnapshot snapshot = loaded.snapshot();
+            if (snapshot.schemaVersion() < GatewaySnapshotSchema.VERSION_3) {
+                continue;
+            }
+            Map<String, GatewayAccessGroupSnapshot> enabledGroups = new HashMap<>();
+            for (GatewayAccessGroupSnapshot group : snapshot.accessGroups()) {
+                if ("ENABLED".equals(group.adminStatus())) {
+                    enabledGroups.put(group.accessGroupId(), group);
+                }
+            }
+            Map<String, List<GatewayAccessGroupModelGrantSnapshot>> grantsByGroup = new HashMap<>();
+            for (GatewayAccessGroupModelGrantSnapshot grant : snapshot.accessGroupModelGrants()) {
+                if ("ENABLED".equals(grant.adminStatus()) && enabledGroups.containsKey(grant.accessGroupId())) {
+                    grantsByGroup.computeIfAbsent(grant.accessGroupId(), ignored -> new ArrayList<>()).add(grant);
+                }
+            }
+            Map<String, List<String>> groupsByKey = new HashMap<>();
+            for (GatewayClientApiKeyAccessGroupSnapshot binding : snapshot.clientApiKeyAccessGroups()) {
+                if ("ENABLED".equals(binding.adminStatus()) && enabledGroups.containsKey(binding.accessGroupId())) {
+                    groupsByKey.computeIfAbsent(binding.clientApiKeyId(), ignored -> new ArrayList<>())
+                            .add(binding.accessGroupId());
+                }
+            }
+            for (GatewayClientApiKeySnapshot key : snapshot.clientApiKeys()) {
+                List<String> groupIds = groupsByKey.getOrDefault(key.clientApiKeyId(), List.of()).stream()
+                        .sorted()
+                        .toList();
+                List<GatewayAccessGroupModelGrantSnapshot> grants = new ArrayList<>();
+                for (String groupId : groupIds) {
+                    grants.addAll(grantsByGroup.getOrDefault(groupId, List.of()));
+                }
+                List<GatewayAccessGroupModelGrantSnapshot> sortedGrants = grants.stream()
+                        .sorted(Comparator.comparing(GatewayAccessGroupModelGrantSnapshot::publicModelCode)
+                                .thenComparing(GatewayAccessGroupModelGrantSnapshot::canonicalOperation))
+                        .toList();
+                GatewayClientPrincipal principal = new GatewayClientPrincipal(snapshot.tenantId(),
+                        key.clientApiKeyId(), key.keyId(), groupIds, sortedGrants);
+                GatewayClientKeyIndexEntry entry = new GatewayClientKeyIndexEntry(key.keyId(), key.adminStatus(),
+                        key.keyVersion(),
+                        decodeVerifierBytes(key.secretVerifierSaltBase64(), GatewayClientKeyCrypto.SALT_BYTES,
+                                "CLIENT_ACCESS_INVALID"),
+                        decodeVerifierBytes(key.secretVerifierHashBase64(), GatewayClientKeyCrypto.HASH_BYTES,
+                                "CLIENT_ACCESS_INVALID"),
+                        key.expiresAtEpochMillis(), principal);
+                nextIndex.put(key.keyId(), entry);
+            }
+        }
+        return Map.copyOf(nextIndex);
+    }
+
+    private byte[] decodeVerifierBytes(String value, int expectedLength, String category) {
+        try {
+            byte[] decoded = Base64.getDecoder().decode(value);
+            if (decoded.length != expectedLength) {
+                throw new GatewaySnapshotValidationException(category, "Client API Key verifier 长度不合法");
+            }
+            return decoded;
+        } catch (IllegalArgumentException e) {
+            throw new GatewaySnapshotValidationException(category, "Client API Key verifier Base64 不合法");
+        }
     }
 
     /**
@@ -436,10 +600,16 @@ public class GatewaySnapshotRuntime {
      * 计算当前同步状态。
      */
     private GatewaySnapshotSyncState syncState() {
-        if (!firstReconcileSucceeded || currentSnapshotCorrupted) {
+        if (!firstReconcileSucceeded) {
             return GatewaySnapshotSyncState.NOT_READY;
         }
         long now = System.currentTimeMillis();
+        if (currentSnapshotCorrupted) {
+            if (!localSnapshots.get().isEmpty() && now - lastSuccessfulReconcileEpochMillis <= config.maxStalenessMs()) {
+                return GatewaySnapshotSyncState.DEGRADED;
+            }
+            return GatewaySnapshotSyncState.NOT_READY;
+        }
         if (lastRedisFailureEpochMillis > lastSuccessfulReconcileEpochMillis) {
             if (!localSnapshots.get().isEmpty() && now - lastSuccessfulReconcileEpochMillis <= config.maxStalenessMs()) {
                 return GatewaySnapshotSyncState.DEGRADED;

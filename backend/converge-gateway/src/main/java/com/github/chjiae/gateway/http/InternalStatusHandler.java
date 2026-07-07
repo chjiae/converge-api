@@ -63,6 +63,7 @@ public class InternalStatusHandler {
                 .put("indexTenantCount", status.indexTenantCount())
                 .put("loadedTenantCount", status.loadedTenantCount())
                 .put("compiledRoutePlanCount", status.compiledRoutePlanCount())
+                .put("clientKeyCount", status.clientKeyCount())
                 .put("invalidRouteTenantCount", status.invalidRouteTenantCount())
                 .put("lastSuccessfulReconcileEpochMillis", status.lastSuccessfulReconcileEpochMillis())
                 .put("latestErrorCategory", status.latestErrorCategory());
@@ -85,12 +86,14 @@ public class InternalStatusHandler {
                 .put("tenantId", tenant.tenantId())
                 .put("revision", tenant.revision())
                 .put("schemaVersion", tenant.schemaVersion())
-                .put("routePlanCount", tenant.routePlanCount())));
+                .put("routePlanCount", tenant.routePlanCount())
+                .put("clientKeyCount", tenant.clientKeyCount())));
         JsonObject data = new JsonObject()
                 .put("status", status.state().name())
                 .put("indexTenantCount", status.indexTenantCount())
                 .put("loadedTenantCount", status.loadedTenantCount())
                 .put("compiledRoutePlanCount", status.compiledRoutePlanCount())
+                .put("clientKeyCount", status.clientKeyCount())
                 .put("invalidRouteTenantCount", status.invalidRouteTenantCount())
                 .put("lastSuccessfulReconcileEpochMillis", status.lastSuccessfulReconcileEpochMillis())
                 .put("latestErrorCategory", status.latestErrorCategory())

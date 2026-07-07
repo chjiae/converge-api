@@ -118,4 +118,56 @@
         WHERE tenant_id = #{tenantId}
         ORDER BY route_policy_id ASC, priority DESC, id ASC
     </select>
+
+    <select id="selectAccessGroups" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotAccessGroupRow">
+        SELECT tenant_id AS tenantId,
+               id AS accessGroupId,
+               code,
+               admin_status AS adminStatus
+        FROM ai_access_group
+        WHERE tenant_id = #{tenantId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectAccessGroupModelGrants" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotAccessGroupModelGrantRow">
+        SELECT g.tenant_id AS tenantId,
+               g.id AS grantId,
+               g.access_group_id AS accessGroupId,
+               g.public_model_id AS publicModelId,
+               m.code AS publicModelCode,
+               g.canonical_operation AS canonicalOperation,
+               g.admin_status AS adminStatus
+        FROM ai_access_group_model_grant g
+        INNER JOIN ai_public_model m
+                ON m.tenant_id = g.tenant_id
+               AND m.id = g.public_model_id
+        WHERE g.tenant_id = #{tenantId}
+        ORDER BY g.id ASC
+    </select>
+
+    <select id="selectClientApiKeys" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotClientApiKeyRow">
+        SELECT tenant_id AS tenantId,
+               id AS clientApiKeyId,
+               key_id AS keyId,
+               admin_status AS adminStatus,
+               secret_hash_algorithm AS secretHashAlgorithm,
+               secret_verifier_salt AS secretVerifierSalt,
+               secret_verifier_hash AS secretVerifierHash,
+               key_version AS keyVersion,
+               expires_at AS expiresAt
+        FROM ai_client_api_key
+        WHERE tenant_id = #{tenantId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectClientApiKeyAccessGroups" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotClientApiKeyAccessGroupRow">
+        SELECT tenant_id AS tenantId,
+               id AS bindingId,
+               client_api_key_id AS clientApiKeyId,
+               access_group_id AS accessGroupId,
+               admin_status AS adminStatus
+        FROM ai_client_api_key_access_group
+        WHERE tenant_id = #{tenantId}
+        ORDER BY id ASC
+    </select>
 </mapper>

@@ -54,6 +54,49 @@ class GatewaySnapshotContractTest {
     }
 
     @Test
+    void contract_ClientKeyVerifier和V3快照可跨模块序列化() {
+        GatewayClientKeyCrypto.GeneratedClientKey generated = GatewayClientKeyCrypto.generate();
+        byte[] salt = GatewayClientKeyCrypto.generateSalt();
+        byte[] verifier = GatewayClientKeyCrypto.verifier(generated.rawKey(), generated.keyId(), 1, salt);
+
+        assertThat(generated.rawKey()).startsWith(GatewayClientKeyCrypto.RAW_KEY_PREFIX);
+        assertThat(GatewayClientKeyCrypto.parse(generated.rawKey()).valid()).isTrue();
+        assertThat(verifier).hasSize(GatewayClientKeyCrypto.HASH_BYTES);
+        assertThat(GatewayClientKeyCrypto.verify(generated.rawKey(), generated.keyId(), 1, salt, verifier)).isTrue();
+
+        GatewayClientKeyCrypto.GeneratedClientKey rotated = GatewayClientKeyCrypto.generateForKeyId(generated.keyId());
+        byte[] rotatedSalt = GatewayClientKeyCrypto.generateSalt();
+        byte[] rotatedVerifier = GatewayClientKeyCrypto.verifier(rotated.rawKey(), generated.keyId(), 2, rotatedSalt);
+        assertThat(GatewayClientKeyCrypto.verify(generated.rawKey(), generated.keyId(), 2,
+                rotatedSalt, rotatedVerifier)).isFalse();
+        assertThat(GatewayClientKeyCrypto.verify(rotated.rawKey(), generated.keyId(), 2,
+                rotatedSalt, rotatedVerifier)).isTrue();
+
+        GatewayTenantSnapshot snapshot = new GatewayTenantSnapshot(GatewaySnapshotSchema.VERSION_3,
+                "tenant-1", 8, 1000L,
+                List.of(new GatewayPublicModelSnapshot("tenant-1", "model-1", "gpt-public", "GPT", "gpt")),
+                List.of(), List.of(), List.of(), List.of(),
+                List.of(new GatewayAccessGroupSnapshot("tenant-1", "group-1", "default", "ENABLED")),
+                List.of(new GatewayAccessGroupModelGrantSnapshot("tenant-1", "grant-1", "group-1",
+                        "model-1", "gpt-public", "CHAT_COMPLETIONS", "ENABLED")),
+                List.of(new GatewayClientApiKeySnapshot("tenant-1", "key-1", generated.keyId(), "ENABLED",
+                        GatewayClientKeyCrypto.HASH_ALGORITHM,
+                        Base64.getEncoder().encodeToString(salt),
+                        Base64.getEncoder().encodeToString(verifier),
+                        1, 0L)),
+                List.of(new GatewayClientApiKeyAccessGroupSnapshot("tenant-1", "binding-1", "key-1",
+                        "group-1", "ENABLED")));
+
+        String json = GatewaySnapshotJson.toJson(snapshot);
+        GatewayTenantSnapshot parsed = GatewaySnapshotJson.fromJson(json, GatewayTenantSnapshot.class);
+
+        assertThat(json).doesNotContain(generated.rawKey());
+        assertThat(parsed.schemaVersion()).isEqualTo(GatewaySnapshotSchema.VERSION_3);
+        assertThat(parsed.clientApiKeys()).hasSize(1);
+        assertThat(parsed.accessGroupModelGrants()).hasSize(1);
+    }
+
+    @Test
     void contract_不依赖禁止的服务框架和存储客户端() throws Exception {
         String pom = Files.readString(Path.of("pom.xml"));
 

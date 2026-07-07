@@ -195,7 +195,7 @@ class AiStaticRoutingIntegrationTest extends BaseIntegrationTest {
         assertThat(payloadJson).doesNotContain(upstreamSecret());
 
         GatewayTenantSnapshot snapshot = GatewaySnapshotJson.fromJson(payloadJson, GatewayTenantSnapshot.class);
-        assertThat(snapshot.schemaVersion()).isEqualTo(2);
+        assertThat(snapshot.schemaVersion()).isEqualTo(3);
         assertThat(snapshot.resourcePools()).isNotEmpty();
         assertThat(snapshot.resourceModelBindings()).isNotEmpty();
         assertThat(snapshot.routePolicies()).isNotEmpty();

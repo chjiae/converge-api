@@ -10,7 +10,7 @@ import java.time.Instant;
 /**
  * 网关路由工厂。
  *
- * 当前阶段只注册内部运维接口和基础错误处理，不注册 `/v1/*` 或任何上游转发路由。
+ * 当前阶段注册内部运维接口和 `/v1/models` 模型列表，不注册任何上游转发路由。
  */
 public final class GatewayRouterFactory {
 
@@ -43,6 +43,7 @@ public final class GatewayRouterFactory {
                                 GatewaySnapshotRuntime snapshotRuntime, boolean enableTestFailureRoute) {
         Router router = Router.router(vertx);
         InternalStatusHandler internalStatusHandler = new InternalStatusHandler(config, startedAt, snapshotRuntime);
+        GatewayModelsHandler modelsHandler = new GatewayModelsHandler(snapshotRuntime);
 
         router.route().handler(new AccessLogHandler());
         router.route().handler(new RequestIdHandler());
@@ -51,6 +52,7 @@ public final class GatewayRouterFactory {
         router.get("/internal/ready").handler(internalStatusHandler::ready);
         router.get("/internal/version").handler(internalStatusHandler::version);
         router.get("/internal/snapshot-status").handler(internalStatusHandler::snapshotStatus);
+        router.get("/v1/models").handler(modelsHandler::handle);
 
         if (enableTestFailureRoute) {
             // 仅测试统一 500 响应使用，正式运行配置不会注册此路由。

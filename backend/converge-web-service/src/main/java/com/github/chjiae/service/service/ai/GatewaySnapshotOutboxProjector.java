@@ -1,6 +1,10 @@
 package com.github.chjiae.service.service.ai;
 
 import com.github.chjiae.common.enums.AiCredentialType;
+import com.github.chjiae.contract.gateway.GatewayAccessGroupModelGrantSnapshot;
+import com.github.chjiae.contract.gateway.GatewayAccessGroupSnapshot;
+import com.github.chjiae.contract.gateway.GatewayClientApiKeyAccessGroupSnapshot;
+import com.github.chjiae.contract.gateway.GatewayClientApiKeySnapshot;
 import com.github.chjiae.contract.gateway.GatewayExecutionResourceSnapshot;
 import com.github.chjiae.contract.gateway.GatewayPublicModelSnapshot;
 import com.github.chjiae.contract.gateway.GatewayResourceModelBindingSnapshot;
@@ -29,7 +33,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -169,6 +175,10 @@ public class GatewaySnapshotOutboxProjector {
         List<GatewayResourcePoolSnapshot> resourcePools = new ArrayList<>();
         List<GatewayResourceModelBindingSnapshot> resourceModelBindings = new ArrayList<>();
         List<GatewayRoutePolicySnapshot> routePolicies = new ArrayList<>();
+        List<GatewayAccessGroupSnapshot> accessGroups = new ArrayList<>();
+        List<GatewayAccessGroupModelGrantSnapshot> accessGroupModelGrants = new ArrayList<>();
+        List<GatewayClientApiKeySnapshot> clientApiKeys = new ArrayList<>();
+        List<GatewayClientApiKeyAccessGroupSnapshot> clientApiKeyAccessGroups = new ArrayList<>();
         if (!EMPTY_SNAPSHOT_TENANT_STATUSES.contains(tenantStatus)) {
             publicModels.addAll(snapshotQueryMapper.selectEnabledPublicModels(tenantId).stream()
                     .map(row -> new GatewayPublicModelSnapshot(
@@ -212,11 +222,36 @@ public class GatewaySnapshotOutboxProjector {
                                             target.getAdminStatus(), target.getPriority(), target.getWeight()))
                                     .toList()))
                     .toList());
+            accessGroups.addAll(snapshotQueryMapper.selectAccessGroups(tenantId).stream()
+                    .map(row -> new GatewayAccessGroupSnapshot(tenantIdString,
+                            row.getAccessGroupId().toString(), row.getCode(), row.getAdminStatus()))
+                    .toList());
+            accessGroupModelGrants.addAll(snapshotQueryMapper.selectAccessGroupModelGrants(tenantId).stream()
+                    .map(row -> new GatewayAccessGroupModelGrantSnapshot(tenantIdString,
+                            row.getGrantId().toString(), row.getAccessGroupId().toString(),
+                            row.getPublicModelId().toString(), row.getPublicModelCode(),
+                            row.getCanonicalOperation(), row.getAdminStatus()))
+                    .toList());
+            clientApiKeys.addAll(snapshotQueryMapper.selectClientApiKeys(tenantId).stream()
+                    .map(row -> new GatewayClientApiKeySnapshot(tenantIdString,
+                            row.getClientApiKeyId().toString(), row.getKeyId(), row.getAdminStatus(),
+                            row.getSecretHashAlgorithm(),
+                            Base64.getEncoder().encodeToString(row.getSecretVerifierSalt()),
+                            Base64.getEncoder().encodeToString(row.getSecretVerifierHash()),
+                            row.getKeyVersion(),
+                            toEpochMillis(row.getExpiresAt())))
+                    .toList());
+            clientApiKeyAccessGroups.addAll(snapshotQueryMapper.selectClientApiKeyAccessGroups(tenantId).stream()
+                    .map(row -> new GatewayClientApiKeyAccessGroupSnapshot(tenantIdString,
+                            row.getBindingId().toString(), row.getClientApiKeyId().toString(),
+                            row.getAccessGroupId().toString(), row.getAdminStatus()))
+                    .toList());
         }
 
         GatewayTenantSnapshot snapshot = new GatewayTenantSnapshot(GatewaySnapshotSchema.CURRENT_VERSION,
                 tenantIdString, revision, System.currentTimeMillis(), publicModels, executionResources,
-                resourcePools, resourceModelBindings, routePolicies);
+                resourcePools, resourceModelBindings, routePolicies,
+                accessGroups, accessGroupModelGrants, clientApiKeys, clientApiKeyAccessGroups);
         byte[] payloadBytes = GatewaySnapshotJson.toBytes(snapshot);
         String payloadKey = GatewaySnapshotRedisKeys.payloadKey(tenantIdString, revision);
         String payloadSha256 = GatewaySnapshotCrypto.sha256Hex(payloadBytes);
@@ -293,6 +328,13 @@ public class GatewaySnapshotOutboxProjector {
         String sanitized = (throwable.getClass().getSimpleName() + ": " + message)
                 .replaceAll("[\\r\\n\\t]", " ");
         return sanitized.length() > 240 ? sanitized.substring(0, 240) : sanitized;
+    }
+
+    private long toEpochMillis(LocalDateTime value) {
+        if (value == null) {
+            return 0L;
+        }
+        return value.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     /**

@@ -35,6 +35,18 @@ public final class GatewaySnapshotChangeTypes {
     /** RouteTarget 变更。 */
     public static final String AI_ROUTE_TARGET_CHANGED = "AI_ROUTE_TARGET_CHANGED";
 
+    /** AccessGroup 变更。 */
+    public static final String AI_ACCESS_GROUP_CHANGED = "AI_ACCESS_GROUP_CHANGED";
+
+    /** AccessGroupModelGrant 变更。 */
+    public static final String AI_ACCESS_GROUP_MODEL_GRANT_CHANGED = "AI_ACCESS_GROUP_MODEL_GRANT_CHANGED";
+
+    /** ClientApiKey 变更。 */
+    public static final String AI_CLIENT_API_KEY_CHANGED = "AI_CLIENT_API_KEY_CHANGED";
+
+    /** ClientApiKeyAccessGroup 变更。 */
+    public static final String AI_CLIENT_API_KEY_ACCESS_GROUP_CHANGED = "AI_CLIENT_API_KEY_ACCESS_GROUP_CHANGED";
+
     private GatewaySnapshotChangeTypes() {
     }
 }
