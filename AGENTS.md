@@ -87,3 +87,20 @@
 - 后端 Controller 层保持薄层，业务逻辑下沉到 Service 层。
 - 禁止在提交中包含自动生成的 IDE 配置、编译产物（target/、dist/、node_modules/ 等）。
 - 遵循所在语言的社区编码风格（Java 遵循阿里巴巴 Java 开发手册，TypeScript 遵循 ESLint + Prettier 配置）。
+- **代码可读性与可调试性**：所有代码编写应优先保证逻辑清晰、易于阅读和断点调试。具体约束如下：
+  - **链式调用**（如 Java Stream、Builder 链、Promise 链、RxJS 管道等）应尽量避免使用。当等价的命令式写法不影响性能且逻辑更直观时，优先使用传统循环或分步赋值。仅在链式调用能显著简化逻辑、避免重复代码或存在性能优势时才允许使用。
+  - **必须使用链式调用时**，每个方法调用必须独占一行，禁止将多个调用挤在同一行。Java Stream 示例：
+    ```java
+    // 正确：每步独占一行，便于断点和阅读
+    List<String> names = users.stream()
+            .filter(u -> u.getStatus() == UserStatus.ACTIVE)
+            .sorted(Comparator.comparing(User::getCreatedAt))
+            .map(User::getDisplayName)
+            .toList();
+
+    // 错误：链式调用挤在一行，无法断点排查中间结果
+    List<String> names = users.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE).sorted(Comparator.comparing(User::getCreatedAt)).map(User::getDisplayName).toList();
+    ```
+  - **中间变量优先**：当表达式嵌套过深（超过 2 层）或单行逻辑过于复杂时，应拆分为多个有意义的中间变量，使每步计算可独立观察和调试。
+  - **避免难以调试的写法**：包括但不限于——三元运算符嵌套、单行内完成过多逻辑的 lambda、将异常吞入 lambda 内部导致堆栈丢失、过度使用 Optional 链替代显式空判断等。凡是不利于 IDE 断点定位、不利于快速理解数据流向的写法，都应优化为更直白的形式。
+  - **核心判断标准**：如果一位不熟悉该模块的开发者首次阅读此代码，能否在不借助调试器的情况下快速理解其逻辑？如果不能，则需要重构。
