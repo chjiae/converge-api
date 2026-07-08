@@ -1,6 +1,7 @@
 package com.github.chjiae.gateway.snapshot;
 
 import com.github.chjiae.contract.gateway.GatewayExecutionResourceSnapshot;
+import com.github.chjiae.contract.gateway.GatewayExecutionResourceRuntimePolicySnapshot;
 import com.github.chjiae.contract.gateway.GatewayAccessGroupModelGrantSnapshot;
 import com.github.chjiae.contract.gateway.GatewayAccessGroupSnapshot;
 import com.github.chjiae.contract.gateway.GatewayClientApiKeyAccessGroupSnapshot;
@@ -16,6 +17,8 @@ import com.github.chjiae.contract.gateway.GatewaySnapshotSchema;
 import com.github.chjiae.contract.gateway.GatewaySnapshotSyncState;
 import com.github.chjiae.contract.gateway.GatewayTenantSnapshot;
 import com.github.chjiae.gateway.config.GatewaySnapshotConfig;
+import com.github.chjiae.routing.StaticRouteCandidate;
+import com.github.chjiae.routing.StaticRouteCandidatePlanner;
 import com.github.chjiae.routing.StaticRoutePlan;
 import com.github.chjiae.routing.StaticRouteRequestSelector;
 import com.github.chjiae.routing.StaticRouteSelection;
@@ -105,6 +108,9 @@ public class GatewaySnapshotRuntime {
 
     /** 真实请求静态选择器 */
     private final StaticRouteRequestSelector requestSelector = new StaticRouteRequestSelector();
+
+    /** 动态治理候选规划器 */
+    private final StaticRouteCandidatePlanner candidatePlanner = new StaticRouteCandidatePlanner();
 
     /**
      * 创建网关快照运行时。
@@ -271,9 +277,84 @@ public class GatewaySnapshotRuntime {
         try {
             return new GatewayOpenAiExecutionTarget(loaded.snapshot().tenantId(), publicModelCode,
                     loaded.snapshot().revision(), selection.routePolicyId(), resource.resourceId(),
-                    resource.baseUrl(), selection.upstreamModelName(), runtimeSecret);
+                    resource.baseUrl(), selection.upstreamModelName(), runtimeSecret,
+                    loaded.runtimePolicies().get(resource.resourceId()));
         } catch (IllegalArgumentException e) {
             throw new GatewayOpenAiExecutionException(502, "upstream_protocol_error", "Upstream protocol error");
+        }
+    }
+
+    /**
+     * 解析 OpenAI Chat Completions 动态治理候选执行目标。
+     * 只读取本地快照、路由计划和已解封装 runtime secret，不访问 Redis 或数据库。
+     *
+     * @param principal 已认证主体
+     * @param publicModelCode 下游公开模型编码
+     * @param requestId 请求 ID，用于构造安全选择 seed
+     * @param maxCandidates 最大候选数量
+     * @return 执行目标候选列表
+     */
+    public List<GatewayOpenAiExecutionTarget> resolveOpenAiChatExecutionCandidates(GatewayClientPrincipal principal,
+                                                                                   String publicModelCode,
+                                                                                   String requestId,
+                                                                                   int maxCandidates) {
+        if (syncState() == GatewaySnapshotSyncState.NOT_READY) {
+            throw new GatewayOpenAiExecutionException(503, "gateway_not_ready", "Gateway not ready");
+        }
+        if (!hasGrant(principal, publicModelCode, "CHAT_COMPLETIONS")) {
+            throw new GatewayOpenAiExecutionException(403, "model_access_denied", "Model access denied");
+        }
+        GatewayLoadedTenantSnapshot loaded = localSnapshots.get().get(principal.tenantId());
+        if (loaded == null) {
+            throw new GatewayOpenAiExecutionException(404, "model_not_found", "Model not found");
+        }
+        String routeKey = publicModelCode + "|CHAT_COMPLETIONS";
+        StaticRoutePlan plan = loaded.routePlans().get(routeKey);
+        if (plan == null) {
+            throw new GatewayOpenAiExecutionException(404, "model_not_found", "Model not found");
+        }
+        String seed = requestId + "|" + principal.tenantId() + "|" + publicModelCode
+                + "|CHAT_COMPLETIONS|" + loaded.snapshot().revision();
+        List<StaticRouteCandidate> candidates = candidatePlanner.plan(plan, seed);
+        List<GatewayOpenAiExecutionTarget> targets = new ArrayList<>();
+        int limit = Math.min(Math.max(maxCandidates, 0), candidates.size());
+        for (int i = 0; i < limit; i++) {
+            GatewayOpenAiExecutionTarget target = toExecutionTarget(loaded, publicModelCode, candidates.get(i));
+            if (target != null) {
+                targets.add(target);
+            }
+        }
+        if (targets.isEmpty()) {
+            throw new GatewayOpenAiExecutionException(503,
+                    "no_runtime_eligible_resource", "No runtime eligible resource");
+        }
+        return List.copyOf(targets);
+    }
+
+    private GatewayOpenAiExecutionTarget toExecutionTarget(GatewayLoadedTenantSnapshot loaded,
+                                                           String publicModelCode,
+                                                           StaticRouteCandidate candidate) {
+        GatewayExecutionResourceSnapshot resource = findResource(loaded.snapshot(), candidate.executionResourceId());
+        if (resource == null) {
+            return null;
+        }
+        if (!"DIRECT_API".equals(resource.resourceType())
+                || !"OPENAI_COMPATIBLE".equals(resource.protocolType())
+                || !"ENABLED".equals(resource.adminStatus())) {
+            return null;
+        }
+        String runtimeSecret = loaded.runtimeSecrets().get(resource.resourceId());
+        GatewayExecutionResourceRuntimePolicySnapshot runtimePolicy =
+                loaded.runtimePolicies().get(resource.resourceId());
+        if (runtimeSecret == null || runtimeSecret.isBlank() || runtimePolicy == null) {
+            return null;
+        }
+        try {
+            return new GatewayOpenAiExecutionTarget(loaded.snapshot().tenantId(), publicModelCode,
+                    loaded.snapshot().revision(), candidate.policyId(), resource.resourceId(),
+                    resource.baseUrl(), candidate.upstreamModelName(), runtimeSecret, runtimePolicy);
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 
@@ -474,7 +555,42 @@ public class GatewaySnapshotRuntime {
         }
         Map<String, StaticRoutePlan> routePlans = compileRoutePlans(snapshot);
         validateClientAccess(snapshot);
-        return new GatewayLoadedTenantSnapshot(snapshot, secrets, routePlans);
+        Map<String, GatewayExecutionResourceRuntimePolicySnapshot> runtimePolicies = validateRuntimePolicies(snapshot);
+        return new GatewayLoadedTenantSnapshot(snapshot, secrets, routePlans, runtimePolicies);
+    }
+
+    /**
+     * 校验 V4 执行资源运行时治理策略。
+     */
+    private Map<String, GatewayExecutionResourceRuntimePolicySnapshot> validateRuntimePolicies(
+            GatewayTenantSnapshot snapshot) {
+        if (snapshot.schemaVersion() < GatewaySnapshotSchema.VERSION_4) {
+            return Map.of();
+        }
+        Map<String, GatewayExecutionResourceRuntimePolicySnapshot> policies = new HashMap<>();
+        for (GatewayExecutionResourceRuntimePolicySnapshot policy : snapshot.executionResourceRuntimePolicies()) {
+            if (!snapshot.tenantId().equals(policy.tenantId())
+                    || policy.executionResourceId() == null
+                    || policy.executionResourceId().isBlank()
+                    || policy.policyVersion() < 1
+                    || policy.maxConcurrentRequests() < 0
+                    || policy.consecutiveFailureThreshold() <= 0
+                    || policy.failureResetAfterMs() <= 0
+                    || policy.failureCooldownMs() <= 0
+                    || policy.rateLimitCooldownMs() <= 0
+                    || policies.containsKey(policy.executionResourceId())) {
+                throw new GatewaySnapshotValidationException("RUNTIME_POLICY_INVALID",
+                        "执行资源运行时治理策略不合法");
+            }
+            policies.put(policy.executionResourceId(), policy);
+        }
+        for (GatewayExecutionResourceSnapshot resource : snapshot.executionResources()) {
+            if (!policies.containsKey(resource.resourceId())) {
+                throw new GatewaySnapshotValidationException("RUNTIME_POLICY_MISSING",
+                        "执行资源运行时治理策略缺失");
+            }
+        }
+        return Map.copyOf(policies);
     }
 
     /**

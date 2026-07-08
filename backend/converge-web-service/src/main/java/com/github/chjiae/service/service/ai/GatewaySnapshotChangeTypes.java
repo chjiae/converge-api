@@ -20,6 +20,10 @@ public final class GatewaySnapshotChangeTypes {
     /** ExecutionResource 变更。 */
     public static final String AI_EXECUTION_RESOURCE_CHANGED = "AI_EXECUTION_RESOURCE_CHANGED";
 
+    /** ExecutionResource 运行时治理策略变更。 */
+    public static final String AI_EXECUTION_RESOURCE_RUNTIME_POLICY_CHANGED =
+            "AI_EXECUTION_RESOURCE_RUNTIME_POLICY_CHANGED";
+
     /** ResourcePool 变更。 */
     public static final String AI_RESOURCE_POOL_CHANGED = "AI_RESOURCE_POOL_CHANGED";
 

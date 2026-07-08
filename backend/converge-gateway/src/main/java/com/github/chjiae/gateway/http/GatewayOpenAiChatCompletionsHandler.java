@@ -3,6 +3,10 @@ package com.github.chjiae.gateway.http;
 import com.github.chjiae.contract.gateway.GatewayClientPrincipal;
 import com.github.chjiae.contract.gateway.GatewaySnapshotSyncState;
 import com.github.chjiae.gateway.execution.GatewayExecutionRuntime;
+import com.github.chjiae.gateway.governance.GatewayRuntimeAcquireResult;
+import com.github.chjiae.gateway.governance.GatewayRuntimeGovernanceRuntime;
+import com.github.chjiae.gateway.governance.GatewayRuntimeLease;
+import com.github.chjiae.gateway.governance.GatewayRuntimeLeaseAcquireStatus;
 import com.github.chjiae.gateway.snapshot.GatewayOpenAiExecutionException;
 import com.github.chjiae.gateway.snapshot.GatewayOpenAiExecutionTarget;
 import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
@@ -10,6 +14,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -25,6 +30,9 @@ public class GatewayOpenAiChatCompletionsHandler {
     /** 执行运行时 */
     private final GatewayExecutionRuntime executionRuntime;
 
+    /** 运行时治理运行时 */
+    private final GatewayRuntimeGovernanceRuntime governanceRuntime;
+
     /** 数据面认证器 */
     private final GatewayDataPlaneAuthenticator authenticator;
 
@@ -38,11 +46,13 @@ public class GatewayOpenAiChatCompletionsHandler {
      * @param executionRuntime 执行运行时
      */
     public GatewayOpenAiChatCompletionsHandler(GatewaySnapshotRuntime snapshotRuntime,
-                                               GatewayExecutionRuntime executionRuntime) {
+                                               GatewayExecutionRuntime executionRuntime,
+                                               GatewayRuntimeGovernanceRuntime governanceRuntime) {
         this.snapshotRuntime = snapshotRuntime;
         this.executionRuntime = executionRuntime;
+        this.governanceRuntime = governanceRuntime;
         this.authenticator = new GatewayDataPlaneAuthenticator(snapshotRuntime);
-        this.executor = new GatewayOpenAiDirectExecutor(executionRuntime);
+        this.executor = new GatewayOpenAiDirectExecutor(executionRuntime, governanceRuntime);
     }
 
     /**
@@ -131,17 +141,39 @@ public class GatewayOpenAiChatCompletionsHandler {
         }
 
         String requestId = RequestIdHandler.currentRequestId(context);
-        GatewayOpenAiExecutionTarget target;
+        boolean streamRequest = stream;
+        List<GatewayOpenAiExecutionTarget> targets;
         try {
-            target = snapshotRuntime.resolveOpenAiChatExecution(principal, publicModelCode, requestId);
+            targets = snapshotRuntime.resolveOpenAiChatExecutionCandidates(principal, publicModelCode, requestId,
+                    governanceRuntime.config().maxCandidateAttempts());
         } catch (GatewayOpenAiExecutionException e) {
             GatewayDataPlaneResponses.writeError(context, e.statusCode(), e.code(), e.safeMessage());
             return;
         }
+        governanceRuntime.acquire(targets)
+                .onSuccess(result -> executeWithLease(context, requestJson, streamRequest, requestId, result))
+                .onFailure(throwable -> GatewayDataPlaneResponses.writeError(context, 503,
+                        "runtime_state_unavailable", "Runtime state unavailable"));
+    }
+
+    private void executeWithLease(RoutingContext context, JsonObject requestJson, boolean stream,
+                                  String requestId, GatewayRuntimeAcquireResult result) {
+        if (result.status() == GatewayRuntimeLeaseAcquireStatus.RUNTIME_STATE_UNAVAILABLE) {
+            GatewayDataPlaneResponses.writeError(context, 503,
+                    "runtime_state_unavailable", "Runtime state unavailable");
+            return;
+        }
+        GatewayRuntimeLease lease = result.lease();
+        if (lease == null) {
+            GatewayDataPlaneResponses.writeError(context, 503,
+                    "no_runtime_eligible_resource", "No runtime eligible resource");
+            return;
+        }
+        GatewayOpenAiExecutionTarget target = lease.target();
         JsonObject upstreamJson = requestJson.copy();
         upstreamJson.put("model", target.upstreamModelName());
         Buffer upstreamBody = Buffer.buffer(upstreamJson.encode(), java.nio.charset.StandardCharsets.UTF_8.name());
-        executor.execute(context, target, upstreamBody, stream, requestId);
+        executor.execute(context, target, upstreamBody, stream, requestId, lease);
     }
 
     private boolean isJsonContentType(String contentType) {

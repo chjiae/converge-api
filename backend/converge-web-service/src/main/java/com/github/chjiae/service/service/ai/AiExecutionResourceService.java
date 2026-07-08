@@ -53,6 +53,9 @@ public class AiExecutionResourceService {
     /** 网关快照变更记录器 */
     private final GatewaySnapshotChangeRecorder snapshotChangeRecorder;
 
+    /** 执行资源运行时治理策略服务 */
+    private final AiExecutionResourceRuntimePolicyService runtimePolicyService;
+
     /**
      * 创建可执行资源。
      * 校验四方一致性：resource.tenant_id = connection.tenant_id = credential.tenant_id = provider.tenant_id，
@@ -117,6 +120,7 @@ public class AiExecutionResourceService {
         resource.setUpdatedAt(now);
 
         aiExecutionResourceMapper.insert(resource);
+        runtimePolicyService.createDefaultPolicy(tenantId, resource.getId(), now);
         snapshotChangeRecorder.recordChange(tenantId, GatewaySnapshotChangeTypes.AI_EXECUTION_RESOURCE_CHANGED);
 
         log.info("AI 可执行资源创建成功，租户 ID: {}，资源 ID: {}，编码: {}", tenantId, resource.getId(), resource.getCode());

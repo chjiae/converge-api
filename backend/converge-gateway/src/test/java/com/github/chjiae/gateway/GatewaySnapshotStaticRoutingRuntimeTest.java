@@ -110,6 +110,17 @@ class GatewaySnapshotStaticRoutingRuntimeTest {
                 && snapshotStatus().contains("STATIC_ROUTE_INVALID"), 3000);
     }
 
+    @Test
+    void runtime_V4缺少运行时策略时拒绝加载() throws Exception {
+        publish(v4SnapshotWithoutRuntimePolicy("tenant-v4", 1));
+
+        runtime = GatewayRuntime.start(gatewayConfig(), true)
+                .toCompletionStage().toCompletableFuture().orTimeout(5, TimeUnit.SECONDS).join();
+
+        waitUntil(() -> readyStatus() == 503
+                && snapshotStatus().contains("RUNTIME_POLICY_MISSING"), 3000);
+    }
+
     private GatewayTenantSnapshot v1Snapshot(String tenantId, long revision) {
         GatewaySecretEnvelope envelope = envelope(tenantId, revision, "res-1", "cred-1", GatewaySnapshotSchema.VERSION_1);
         return new GatewayTenantSnapshot(GatewaySnapshotSchema.VERSION_1, tenantId, revision, System.currentTimeMillis(),
@@ -138,6 +149,23 @@ class GatewaySnapshotStaticRoutingRuntimeTest {
                         "CHAT_COMPLETIONS", "ENABLED", "PRIORITY_WEIGHTED", List.of(
                         new GatewayRouteTargetSnapshot(tenantId, "policy-1", "pool-1",
                                 "ENABLED", 100, 100)))));
+    }
+
+    private GatewayTenantSnapshot v4SnapshotWithoutRuntimePolicy(String tenantId, long revision) {
+        GatewaySecretEnvelope envelope = envelope(tenantId, revision, "res-1", "cred-1", GatewaySnapshotSchema.VERSION_4);
+        return new GatewayTenantSnapshot(GatewaySnapshotSchema.VERSION_4, tenantId, revision, System.currentTimeMillis(),
+                List.of(new GatewayPublicModelSnapshot(tenantId, "model-1", "public-chat", "公开模型", "chat")),
+                List.of(new GatewayExecutionResourceSnapshot(tenantId, "res-1", "provider-1", "conn-1",
+                        "cred-1", "DIRECT_API", "ENABLED", "OPENAI", "OPENAI_COMPATIBLE",
+                        "https://api.example.test/v1/", envelope)),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of());
     }
 
     private GatewaySecretEnvelope envelope(String tenantId, long revision, String resourceId,

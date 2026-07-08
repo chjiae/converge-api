@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.github.chjiae.contract.gateway.GatewaySnapshotJson;
 import com.github.chjiae.contract.gateway.GatewaySnapshotManifest;
 import com.github.chjiae.contract.gateway.GatewaySnapshotRedisKeys;
+import com.github.chjiae.contract.gateway.GatewaySnapshotSchema;
 import com.github.chjiae.contract.gateway.GatewayTenantSnapshot;
 import com.github.chjiae.service.entity.ai.AiGatewaySnapshotOutbox;
 import com.github.chjiae.service.mapper.ai.AiGatewaySnapshotOutboxMapper;
@@ -184,7 +185,7 @@ class AiStaticRoutingIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @Order(6)
-    void snapshot_控制面发布V2且不包含明文密钥() {
+    void snapshot_控制面发布当前版本且不包含明文密钥() {
         GatewaySnapshotOutboxProjector.ProjectorResult result = projector.projectPendingOnce("phase05-test");
         assertThat(result.publishedTenantCount()).isGreaterThanOrEqualTo(1);
 
@@ -195,7 +196,7 @@ class AiStaticRoutingIntegrationTest extends BaseIntegrationTest {
         assertThat(payloadJson).doesNotContain(upstreamSecret());
 
         GatewayTenantSnapshot snapshot = GatewaySnapshotJson.fromJson(payloadJson, GatewayTenantSnapshot.class);
-        assertThat(snapshot.schemaVersion()).isEqualTo(3);
+        assertThat(snapshot.schemaVersion()).isEqualTo(GatewaySnapshotSchema.CURRENT_VERSION);
         assertThat(snapshot.resourcePools()).isNotEmpty();
         assertThat(snapshot.resourceModelBindings()).isNotEmpty();
         assertThat(snapshot.routePolicies()).isNotEmpty();

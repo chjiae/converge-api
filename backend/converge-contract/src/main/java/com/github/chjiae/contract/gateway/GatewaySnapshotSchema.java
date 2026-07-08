@@ -15,14 +15,17 @@ public final class GatewaySnapshotSchema {
     /** 阶段 06 下游 Client API Key 与访问组快照 schema 版本。 */
     public static final int VERSION_3 = 3;
 
+    /** 阶段 08 执行资源运行时治理快照 schema 版本。 */
+    public static final int VERSION_4 = 4;
+
     /** 当前控制面发布的快照 schema 版本。 */
-    public static final int CURRENT_VERSION = VERSION_3;
+    public static final int CURRENT_VERSION = VERSION_4;
 
     /** 网关当前支持的最小快照 schema 版本。 */
     public static final int MIN_SUPPORTED_VERSION = VERSION_1;
 
     /** 网关当前支持的最大快照 schema 版本。 */
-    public static final int MAX_SUPPORTED_VERSION = VERSION_3;
+    public static final int MAX_SUPPORTED_VERSION = VERSION_4;
 
     /** 秘密 envelope 的算法标识。 */
     public static final String SECRET_ALGORITHM = "AES-256-GCM";

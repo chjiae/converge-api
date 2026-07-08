@@ -6,6 +6,7 @@ import com.github.chjiae.contract.gateway.GatewayClientApiKeyAccessGroupSnapshot
 import com.github.chjiae.contract.gateway.GatewayClientApiKeySnapshot;
 import com.github.chjiae.contract.gateway.GatewayClientKeyCrypto;
 import com.github.chjiae.contract.gateway.GatewayExecutionResourceSnapshot;
+import com.github.chjiae.contract.gateway.GatewayExecutionResourceRuntimePolicySnapshot;
 import com.github.chjiae.contract.gateway.GatewayPublicModelSnapshot;
 import com.github.chjiae.contract.gateway.GatewayResourceModelBindingSnapshot;
 import com.github.chjiae.contract.gateway.GatewayResourcePoolMemberSnapshot;
@@ -48,6 +49,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -197,6 +199,38 @@ class GatewayOpenAiDirectForwardingTest {
     }
 
     @Test
+    void chat_运行时并发无可用候选时返回503且不请求第二次上游() throws Exception {
+        startUpstream(exchange -> {
+            capture(exchange);
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            writeJson(exchange, 200, "{\"id\":\"cmpl-1\",\"model\":\"upstream-chat\",\"choices\":[]}");
+        });
+        startGateway(true, true, true, "ENABLED", System.currentTimeMillis() + 3_600_000L,
+                4096, 1000, 5000, 1);
+
+        CompletableFuture<HttpResponse<String>> first = CompletableFuture.supplyAsync(() -> {
+            try {
+                return postJson("{\"model\":\"public-chat\",\"messages\":[]}", key.rawKey());
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        waitUntil(() -> upstreamCalls.get() == 1, 3000);
+
+        HttpResponse<String> second = postJson("{\"model\":\"public-chat\",\"messages\":[]}", key.rawKey());
+        HttpResponse<String> firstResponse = first.get(5, TimeUnit.SECONDS);
+
+        assertEquals(503, second.statusCode());
+        assertTrue(second.body().contains("\"code\":\"no_runtime_eligible_resource\""));
+        assertEquals(200, firstResponse.statusCode());
+        assertEquals(1, upstreamCalls.get());
+    }
+
+    @Test
     void chat_上游限流连接失败超时和未就绪均安全映射() throws Exception {
         startUpstream(exchange -> {
             capture(exchange);
@@ -243,7 +277,7 @@ class GatewayOpenAiDirectForwardingTest {
             writeJson(exchange, 200, "{\"model\":\"upstream-chat\"}");
         });
         key = GatewayClientKeyCrypto.generate();
-        publish(v3Snapshot(true, true, true, "ENABLED", System.currentTimeMillis() + 3_600_000L));
+        publish(v4Snapshot(true, true, true, "ENABLED", System.currentTimeMillis() + 3_600_000L, 0));
         upstream.stop(0);
         upstream = null;
         runtime = GatewayRuntime.start(gatewayConfig(4096, 1000, 5000), true)
@@ -304,7 +338,21 @@ class GatewayOpenAiDirectForwardingTest {
         if (key == null) {
             key = GatewayClientKeyCrypto.generate();
         }
-        publish(v3Snapshot(includeGrant, includeRoute, includeBinding, keyStatus, expiresAt));
+        publish(v4Snapshot(includeGrant, includeRoute, includeBinding, keyStatus, expiresAt, 0));
+        runtime = GatewayRuntime.start(gatewayConfig(maxRequestBytes, connectTimeoutMs, idleTimeoutMs), true)
+                .toCompletionStage().toCompletableFuture().orTimeout(5, TimeUnit.SECONDS).join();
+        waitUntil(() -> snapshotStatus().contains("\"clientKeyCount\":1"), 3000);
+    }
+
+    private void startGateway(boolean includeGrant, boolean includeRoute, boolean includeBinding,
+                              String keyStatus, long expiresAt, long maxRequestBytes,
+                              long connectTimeoutMs, long idleTimeoutMs,
+                              int maxConcurrentRequests) throws Exception {
+        if (key == null) {
+            key = GatewayClientKeyCrypto.generate();
+        }
+        publish(v4Snapshot(includeGrant, includeRoute, includeBinding, keyStatus, expiresAt,
+                maxConcurrentRequests));
         runtime = GatewayRuntime.start(gatewayConfig(maxRequestBytes, connectTimeoutMs, idleTimeoutMs), true)
                 .toCompletionStage().toCompletableFuture().orTimeout(5, TimeUnit.SECONDS).join();
         waitUntil(() -> snapshotStatus().contains("\"clientKeyCount\":1"), 3000);
@@ -393,6 +441,53 @@ class GatewayOpenAiDirectForwardingTest {
                         1, expiresAt)),
                 List.of(new GatewayClientApiKeyAccessGroupSnapshot("tenant-1", "binding-1",
                         "key-1", "group-1", "ENABLED")));
+    }
+
+    private GatewayTenantSnapshot v4Snapshot(boolean includeGrant, boolean includeRoute, boolean includeBinding,
+                                             String keyStatus, long expiresAt, int maxConcurrentRequests) {
+        GatewaySecretEnvelope envelope = GatewaySnapshotCrypto.encryptSecret("runtime-secret",
+                SNAPSHOT_ENCRYPTION_KEY,
+                GatewaySnapshotCrypto.secretAad(GatewaySnapshotSchema.VERSION_4, "tenant-1", "res-1",
+                        "cred-1", 1, "gateway-test-key"),
+                "gateway-test-key");
+        byte[] salt = GatewayClientKeyCrypto.generateSalt();
+        byte[] verifier = GatewayClientKeyCrypto.verifier(key.rawKey(), key.keyId(), 1, salt);
+        List<GatewayAccessGroupModelGrantSnapshot> grants = includeGrant
+                ? List.of(new GatewayAccessGroupModelGrantSnapshot("tenant-1", "grant-1", "group-1",
+                "model-1", "public-chat", "CHAT_COMPLETIONS", "ENABLED"))
+                : List.of();
+        List<GatewayResourceModelBindingSnapshot> bindings = includeBinding
+                ? List.of(new GatewayResourceModelBindingSnapshot("tenant-1", "res-1", "model-1",
+                "CHAT_COMPLETIONS", "upstream-chat", "ENABLED"))
+                : List.of();
+        List<GatewayRoutePolicySnapshot> policies = includeRoute
+                ? List.of(new GatewayRoutePolicySnapshot("tenant-1", "policy-1", "model-1", "public-chat",
+                "CHAT_COMPLETIONS", "ENABLED", "PRIORITY_WEIGHTED", List.of(
+                new GatewayRouteTargetSnapshot("tenant-1", "policy-1", "pool-1", "ENABLED", 100, 100))))
+                : List.of();
+        return new GatewayTenantSnapshot(GatewaySnapshotSchema.VERSION_4, "tenant-1", 1, System.currentTimeMillis(),
+                List.of(new GatewayPublicModelSnapshot("tenant-1", "model-1", "public-chat", "公开模型", "chat")),
+                List.of(new GatewayExecutionResourceSnapshot("tenant-1", "res-1", "provider-1", "conn-1",
+                        "cred-1", "DIRECT_API", "ENABLED", "OPENAI", "OPENAI_COMPATIBLE",
+                        "http://127.0.0.1:" + upstream.getAddress().getPort() + "/v1/", envelope)),
+                List.of(new GatewayResourcePoolSnapshot("tenant-1", "pool-1", "primary", "主池",
+                        "ENABLED", "PRIORITY_WEIGHTED", List.of(
+                        new GatewayResourcePoolMemberSnapshot("tenant-1", "pool-1", "res-1",
+                                "ENABLED", 100, 100)))),
+                bindings,
+                policies,
+                List.of(new GatewayAccessGroupSnapshot("tenant-1", "group-1", "default", "ENABLED")),
+                grants,
+                List.of(new GatewayClientApiKeySnapshot("tenant-1", "key-1", key.keyId(),
+                        keyStatus, "SHA-256",
+                        Base64.getEncoder().encodeToString(salt),
+                        Base64.getEncoder().encodeToString(verifier),
+                        1, expiresAt)),
+                List.of(new GatewayClientApiKeyAccessGroupSnapshot("tenant-1", "binding-1",
+                        "key-1", "group-1", "ENABLED")),
+                List.of(new GatewayExecutionResourceRuntimePolicySnapshot("tenant-1",
+                        "runtime-policy-1", "res-1", 1L, maxConcurrentRequests,
+                        3, 10_000L, 500L, 700L)));
     }
 
     private void publish(GatewayTenantSnapshot snapshot) {

@@ -104,10 +104,36 @@ class GatewaySnapshotControlPlaneIntegrationTest extends BaseIntegrationTest {
 
     @Test
     @Order(2)
+    void runtimePolicy_创建资源自动生成默认策略且更新写入Outbox() {
+        JsonNode policy = assertSuccess(get("/api/v1/ai/resources/" + resourceId + "/runtime-policy",
+                tenantOwnerToken));
+        assertThat(policy.get("executionResourceId").asLong()).isEqualTo(resourceId);
+        assertThat(policy.get("maxConcurrentRequests").asInt()).isEqualTo(0);
+        assertThat(policy.get("consecutiveFailureThreshold").asInt()).isEqualTo(3);
+        assertThat(policy.get("policyVersion").asLong()).isEqualTo(1L);
+
+        JsonNode updated = assertSuccess(put("/api/v1/ai/resources/" + resourceId + "/runtime-policy",
+                tenantOwnerToken, """
+                {
+                  "maxConcurrentRequests": 2,
+                  "consecutiveFailureThreshold": 4,
+                  "failureResetAfterMs": 120000,
+                  "failureCooldownMs": 30000,
+                  "rateLimitCooldownMs": 60000
+                }
+                """));
+
+        assertThat(updated.get("maxConcurrentRequests").asInt()).isEqualTo(2);
+        assertThat(updated.get("consecutiveFailureThreshold").asInt()).isEqualTo(4);
+        assertThat(updated.get("policyVersion").asLong()).isEqualTo(2L);
+    }
+
+    @Test
+    @Order(3)
     void mutation_同一事务递增Revision并写入Outbox() {
         AiGatewaySnapshotRevision revision = revisionMapper.selectById(tenantId);
         assertThat(revision).isNotNull();
-        assertThat(revision.getCurrentRevision()).isGreaterThanOrEqualTo(5L);
+        assertThat(revision.getCurrentRevision()).isGreaterThanOrEqualTo(6L);
 
         List<AiGatewaySnapshotOutbox> outboxes = outboxMapper.selectList(
                 new LambdaQueryWrapper<AiGatewaySnapshotOutbox>()
@@ -120,14 +146,15 @@ class GatewaySnapshotControlPlaneIntegrationTest extends BaseIntegrationTest {
                         "AI_CONNECTION_CHANGED",
                         "AI_PUBLIC_MODEL_CHANGED",
                         "AI_CREDENTIAL_CHANGED",
-                        "AI_EXECUTION_RESOURCE_CHANGED");
+                        "AI_EXECUTION_RESOURCE_CHANGED",
+                        "AI_EXECUTION_RESOURCE_RUNTIME_POLICY_CHANGED");
         assertThat(outboxes)
                 .extracting(AiGatewaySnapshotOutbox::getRevision)
                 .doesNotHaveDuplicates();
     }
 
     @Test
-    @Order(3)
+    @Order(4)
     void projector_发布Redis快照且不包含明文密钥() {
         GatewaySnapshotOutboxProjector.ProjectorResult result = projector.projectPendingOnce("phase04-test");
         assertThat(result.publishedTenantCount()).isGreaterThanOrEqualTo(1);
@@ -148,6 +175,11 @@ class GatewaySnapshotControlPlaneIntegrationTest extends BaseIntegrationTest {
         assertThat(snapshot.executionResources()).hasSize(1);
         assertThat(snapshot.executionResources().getFirst().resourceId()).isEqualTo(resourceId.toString());
         assertThat(snapshot.executionResources().getFirst().secretEnvelope().ciphertextBase64()).isNotBlank();
+        assertThat(snapshot.schemaVersion()).isEqualTo(4);
+        assertThat(snapshot.executionResourceRuntimePolicies()).hasSize(1);
+        assertThat(snapshot.executionResourceRuntimePolicies().getFirst().executionResourceId())
+                .isEqualTo(resourceId.toString());
+        assertThat(snapshot.executionResourceRuntimePolicies().getFirst().maxConcurrentRequests()).isEqualTo(2);
 
         List<AiGatewaySnapshotOutbox> outboxes = outboxMapper.selectList(
                 new LambdaQueryWrapper<AiGatewaySnapshotOutbox>()
@@ -156,7 +188,7 @@ class GatewaySnapshotControlPlaneIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @Order(4)
+    @Order(5)
     void projector_Redis清空后可通过重投影恢复() {
         redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
         assertThat(redisTemplate.opsForSet().members(GatewaySnapshotRedisKeys.tenantIndexKey())).isEmpty();

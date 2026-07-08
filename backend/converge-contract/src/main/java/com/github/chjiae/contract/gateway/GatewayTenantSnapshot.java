@@ -18,6 +18,7 @@ import java.util.List;
  * @param accessGroupModelGrants V3 访问组模型授权
  * @param clientApiKeys V3 下游 Client API Key verifier 元数据
  * @param clientApiKeyAccessGroups V3 Client API Key 与访问组绑定
+ * @param executionResourceRuntimePolicies V4 执行资源运行时治理策略
  */
 public record GatewayTenantSnapshot(
         int schemaVersion,
@@ -32,7 +33,8 @@ public record GatewayTenantSnapshot(
         List<GatewayAccessGroupSnapshot> accessGroups,
         List<GatewayAccessGroupModelGrantSnapshot> accessGroupModelGrants,
         List<GatewayClientApiKeySnapshot> clientApiKeys,
-        List<GatewayClientApiKeyAccessGroupSnapshot> clientApiKeyAccessGroups
+        List<GatewayClientApiKeyAccessGroupSnapshot> clientApiKeyAccessGroups,
+        List<GatewayExecutionResourceRuntimePolicySnapshot> executionResourceRuntimePolicies
 ) {
 
     /**
@@ -48,6 +50,8 @@ public record GatewayTenantSnapshot(
         accessGroupModelGrants = List.copyOf(accessGroupModelGrants == null ? List.of() : accessGroupModelGrants);
         clientApiKeys = List.copyOf(clientApiKeys == null ? List.of() : clientApiKeys);
         clientApiKeyAccessGroups = List.copyOf(clientApiKeyAccessGroups == null ? List.of() : clientApiKeyAccessGroups);
+        executionResourceRuntimePolicies = List.copyOf(executionResourceRuntimePolicies == null
+                ? List.of() : executionResourceRuntimePolicies);
     }
 
     /**
@@ -60,7 +64,7 @@ public record GatewayTenantSnapshot(
                                  List<GatewayExecutionResourceSnapshot> executionResources) {
         this(schemaVersion, tenantId, revision, generatedAtEpochMillis,
                 publicModels, executionResources, List.of(), List.of(), List.of(),
-                List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /**
@@ -76,6 +80,26 @@ public record GatewayTenantSnapshot(
                                  List<GatewayRoutePolicySnapshot> routePolicies) {
         this(schemaVersion, tenantId, revision, generatedAtEpochMillis,
                 publicModels, executionResources, resourcePools, resourceModelBindings, routePolicies,
-                List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of());
+    }
+
+    /**
+     * V3 兼容构造器。
+     * 阶段 06 包含下游访问授权，V4 运行时治理策略字段保持空集合。
+     */
+    public GatewayTenantSnapshot(int schemaVersion, String tenantId, long revision,
+                                 long generatedAtEpochMillis,
+                                 List<GatewayPublicModelSnapshot> publicModels,
+                                 List<GatewayExecutionResourceSnapshot> executionResources,
+                                 List<GatewayResourcePoolSnapshot> resourcePools,
+                                 List<GatewayResourceModelBindingSnapshot> resourceModelBindings,
+                                 List<GatewayRoutePolicySnapshot> routePolicies,
+                                 List<GatewayAccessGroupSnapshot> accessGroups,
+                                 List<GatewayAccessGroupModelGrantSnapshot> accessGroupModelGrants,
+                                 List<GatewayClientApiKeySnapshot> clientApiKeys,
+                                 List<GatewayClientApiKeyAccessGroupSnapshot> clientApiKeyAccessGroups) {
+        this(schemaVersion, tenantId, revision, generatedAtEpochMillis,
+                publicModels, executionResources, resourcePools, resourceModelBindings, routePolicies,
+                accessGroups, accessGroupModelGrants, clientApiKeys, clientApiKeyAccessGroups, List.of());
     }
 }

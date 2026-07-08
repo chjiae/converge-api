@@ -6,8 +6,11 @@ import com.github.chjiae.common.result.Result;
 import com.github.chjiae.service.annotation.Auditable;
 import com.github.chjiae.service.dto.ai.AiExecutionResourceCreateRequest;
 import com.github.chjiae.service.dto.ai.AiExecutionResourceResponse;
+import com.github.chjiae.service.dto.ai.AiExecutionResourceRuntimePolicyResponse;
+import com.github.chjiae.service.dto.ai.AiExecutionResourceRuntimePolicyUpdateRequest;
 import com.github.chjiae.service.dto.ai.AiExecutionResourceUpdateRequest;
 import com.github.chjiae.service.service.ai.AiExecutionResourceService;
+import com.github.chjiae.service.service.ai.AiExecutionResourceRuntimePolicyService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +39,9 @@ public class AiExecutionResourceController {
 
     /** AI 可执行资源服务 */
     private final AiExecutionResourceService aiExecutionResourceService;
+
+    /** AI 执行资源运行时治理策略服务 */
+    private final AiExecutionResourceRuntimePolicyService runtimePolicyService;
 
     /**
      * 创建可执行资源（静态绑定连接与凭据）。
@@ -134,5 +140,33 @@ public class AiExecutionResourceController {
     public Result<AiExecutionResourceResponse> drainResource(@PathVariable Long id) {
         log.info("排空 AI 可执行资源接口调用，资源 ID: {}", id);
         return Result.ok(aiExecutionResourceService.drainResource(id));
+    }
+
+    /**
+     * 查询执行资源运行时治理策略。
+     *
+     * @param id 资源 ID
+     * @return 运行时策略响应
+     */
+    @GetMapping("/resources/{id}/runtime-policy")
+    public Result<AiExecutionResourceRuntimePolicyResponse> getRuntimePolicy(@PathVariable Long id) {
+        log.info("查询 AI 执行资源运行时策略接口调用，资源 ID: {}", id);
+        return Result.ok(runtimePolicyService.getPolicy(id));
+    }
+
+    /**
+     * 更新执行资源运行时治理策略。
+     *
+     * @param id 资源 ID
+     * @param request 更新请求
+     * @return 更新后的运行时策略响应
+     */
+    @Auditable(module = "ai_resource_runtime_policy", action = "update", target = "'ai_resource:' + #id")
+    @PutMapping("/resources/{id}/runtime-policy")
+    public Result<AiExecutionResourceRuntimePolicyResponse> updateRuntimePolicy(
+            @PathVariable Long id,
+            @Valid @RequestBody AiExecutionResourceRuntimePolicyUpdateRequest request) {
+        log.info("更新 AI 执行资源运行时策略接口调用，资源 ID: {}", id);
+        return Result.ok(runtimePolicyService.updatePolicy(id, request));
     }
 }

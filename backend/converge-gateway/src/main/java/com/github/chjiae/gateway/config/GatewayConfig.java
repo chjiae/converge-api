@@ -16,6 +16,7 @@ import java.util.Map;
  * @param buildVersion      构建版本
  * @param snapshotConfig    快照同步配置
  * @param executionConfig   上游执行配置
+ * @param runtimeGovernanceConfig 运行时治理配置
  */
 public record GatewayConfig(
         String host,
@@ -24,7 +25,8 @@ public record GatewayConfig(
         String serviceName,
         String buildVersion,
         GatewaySnapshotConfig snapshotConfig,
-        GatewayExecutionConfig executionConfig
+        GatewayExecutionConfig executionConfig,
+        GatewayRuntimeGovernanceConfig runtimeGovernanceConfig
 ) {
 
     /** 默认监听地址 */
@@ -64,6 +66,9 @@ public record GatewayConfig(
         if (executionConfig == null) {
             throw new IllegalArgumentException("网关执行配置不能为空");
         }
+        if (runtimeGovernanceConfig == null) {
+            throw new IllegalArgumentException("网关运行时治理配置不能为空");
+        }
     }
 
     /**
@@ -79,7 +84,25 @@ public record GatewayConfig(
     public GatewayConfig(String host, int port, long shutdownTimeoutMs, String serviceName,
                          String buildVersion, GatewaySnapshotConfig snapshotConfig) {
         this(host, port, shutdownTimeoutMs, serviceName, buildVersion,
-                snapshotConfig, GatewayExecutionConfig.defaults());
+                snapshotConfig, GatewayExecutionConfig.defaults(), GatewayRuntimeGovernanceConfig.defaults());
+    }
+
+    /**
+     * 兼容阶段 07 测试和旧调用点的构造器，未传运行时治理配置时使用默认值。
+     *
+     * @param host HTTP 监听地址
+     * @param port HTTP 监听端口
+     * @param shutdownTimeoutMs 优雅关闭等待时间，单位毫秒
+     * @param serviceName 服务名称
+     * @param buildVersion 构建版本
+     * @param snapshotConfig 快照同步配置
+     * @param executionConfig 上游执行配置
+     */
+    public GatewayConfig(String host, int port, long shutdownTimeoutMs, String serviceName,
+                         String buildVersion, GatewaySnapshotConfig snapshotConfig,
+                         GatewayExecutionConfig executionConfig) {
+        this(host, port, shutdownTimeoutMs, serviceName, buildVersion,
+                snapshotConfig, executionConfig, GatewayRuntimeGovernanceConfig.defaults());
     }
 
     /**
@@ -157,8 +180,26 @@ public record GatewayConfig(
                                 String.valueOf(GatewayExecutionConfig.DEFAULT_OPENAI_MAX_SSE_EVENT_BYTES)),
                         "OpenAI SSE event 上限必须是大于 0 的整数")
         );
+        GatewayRuntimeGovernanceConfig runtimeGovernanceConfig = new GatewayRuntimeGovernanceConfig(
+                parsePositiveLong(read(properties, environment, "GATEWAY_RUNTIME_REDIS_COMMAND_TIMEOUT_MS",
+                                "gateway.runtime.redis-command-timeout-ms",
+                                String.valueOf(GatewayRuntimeGovernanceConfig.DEFAULT_REDIS_COMMAND_TIMEOUT_MS)),
+                        "运行时治理 Redis 命令超时时间必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_RUNTIME_LEASE_TTL_MS",
+                                "gateway.runtime.lease-ttl-ms",
+                                String.valueOf(GatewayRuntimeGovernanceConfig.DEFAULT_LEASE_TTL_MS)),
+                        "运行时治理 lease TTL 必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_RUNTIME_LEASE_RENEW_INTERVAL_MS",
+                                "gateway.runtime.lease-renew-interval-ms",
+                                String.valueOf(GatewayRuntimeGovernanceConfig.DEFAULT_LEASE_RENEW_INTERVAL_MS)),
+                        "运行时治理 lease 续租间隔必须是大于 0 的整数"),
+                (int) parsePositiveLong(read(properties, environment, "GATEWAY_RUNTIME_MAX_CANDIDATE_ATTEMPTS",
+                                "gateway.runtime.max-candidate-attempts",
+                                String.valueOf(GatewayRuntimeGovernanceConfig.DEFAULT_MAX_CANDIDATE_ATTEMPTS)),
+                        "运行时治理最大候选尝试数必须是大于 0 的整数")
+        );
         return new GatewayConfig(host, port, shutdownTimeoutMs, serviceName, buildVersion,
-                snapshotConfig, executionConfig);
+                snapshotConfig, executionConfig, runtimeGovernanceConfig);
     }
 
     /**

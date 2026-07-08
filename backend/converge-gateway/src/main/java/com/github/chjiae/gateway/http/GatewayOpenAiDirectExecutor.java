@@ -1,6 +1,9 @@
 package com.github.chjiae.gateway.http;
 
 import com.github.chjiae.gateway.execution.GatewayExecutionRuntime;
+import com.github.chjiae.gateway.governance.GatewayRuntimeGovernanceRuntime;
+import com.github.chjiae.gateway.governance.GatewayRuntimeLease;
+import com.github.chjiae.gateway.governance.GatewayRuntimeLeaseOutcome;
 import com.github.chjiae.gateway.snapshot.GatewayOpenAiExecutionTarget;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -24,13 +27,18 @@ class GatewayOpenAiDirectExecutor {
     /** 执行运行时 */
     private final GatewayExecutionRuntime executionRuntime;
 
+    /** 运行时治理运行时 */
+    private final GatewayRuntimeGovernanceRuntime governanceRuntime;
+
     /**
      * 创建执行器。
      *
      * @param executionRuntime 执行运行时
      */
-    GatewayOpenAiDirectExecutor(GatewayExecutionRuntime executionRuntime) {
+    GatewayOpenAiDirectExecutor(GatewayExecutionRuntime executionRuntime,
+                                GatewayRuntimeGovernanceRuntime governanceRuntime) {
         this.executionRuntime = executionRuntime;
+        this.governanceRuntime = governanceRuntime;
     }
 
     /**
@@ -43,8 +51,10 @@ class GatewayOpenAiDirectExecutor {
      * @param requestId 请求 ID
      */
     void execute(RoutingContext context, GatewayOpenAiExecutionTarget target,
-                 Buffer upstreamBody, boolean stream, String requestId) {
+                 Buffer upstreamBody, boolean stream, String requestId,
+                 GatewayRuntimeLease lease) {
         URI upstreamUri = target.chatCompletionsUri();
+        AtomicBoolean leaseCompleted = new AtomicBoolean(false);
         RequestOptions options = new RequestOptions()
                 .setMethod(HttpMethod.POST)
                 .setAbsoluteURI(upstreamUri.toString())
@@ -54,13 +64,15 @@ class GatewayOpenAiDirectExecutor {
                 .setIdleTimeout(executionRuntime.config().upstreamIdleTimeoutMs());
         executionRuntime.httpClient()
                 .request(options)
-                .onSuccess(request -> sendUpstreamRequest(context, request, target, upstreamBody, stream, requestId))
-                .onFailure(throwable -> writeTransportFailure(context, throwable));
+                .onSuccess(request -> sendUpstreamRequest(context, request, target, upstreamBody,
+                        stream, requestId, lease, leaseCompleted))
+                .onFailure(throwable -> writeTransportFailure(context, throwable, lease, leaseCompleted));
     }
 
     private void sendUpstreamRequest(RoutingContext context, HttpClientRequest request,
                                      GatewayOpenAiExecutionTarget target, Buffer upstreamBody,
-                                     boolean stream, String requestId) {
+                                     boolean stream, String requestId,
+                                     GatewayRuntimeLease lease, AtomicBoolean leaseCompleted) {
         request.putHeader("Authorization", "Bearer " + target.runtimeSecret());
         request.putHeader("Content-Type", GatewayDataPlaneResponses.JSON_CONTENT_TYPE);
         request.putHeader("Accept", stream ? "text/event-stream" : "application/json");
@@ -70,54 +82,65 @@ class GatewayOpenAiDirectExecutor {
         request.send(upstreamBody)
                 .onSuccess(response -> {
                     if (stream) {
-                        handleStreamResponse(context, request, response, target);
+                        handleStreamResponse(context, request, response, target, lease, leaseCompleted);
                     } else {
-                        handleNonStreamResponse(context, request, response, target);
+                        handleNonStreamResponse(context, request, response, target, lease, leaseCompleted);
                     }
                 })
-                .onFailure(throwable -> writeTransportFailure(context, throwable));
+                .onFailure(throwable -> writeTransportFailure(context, throwable, lease, leaseCompleted));
     }
 
     private void handleNonStreamResponse(RoutingContext context, HttpClientRequest request,
-                                         HttpClientResponse response, GatewayOpenAiExecutionTarget target) {
+                                         HttpClientResponse response, GatewayOpenAiExecutionTarget target,
+                                         GatewayRuntimeLease lease, AtomicBoolean leaseCompleted) {
         if (!isSuccess(response.statusCode())) {
-            handleUpstreamError(context, request, response);
+            handleUpstreamError(context, request, response, lease, leaseCompleted);
             return;
         }
         if (!isJson(response.getHeader("Content-Type"))) {
             request.cancel();
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
             GatewayDataPlaneResponses.writeError(context, 502,
                     "upstream_protocol_error", "Upstream protocol error");
             return;
         }
         readLimited(response, request, executionRuntime.config().openAiMaxNonStreamResponseBytes())
-                .onSuccess(body -> writeNonStreamSuccess(context, body, target.publicModelCode()))
-                .onFailure(throwable -> GatewayDataPlaneResponses.writeError(context, 502,
-                        "upstream_protocol_error", "Upstream protocol error"));
+                .onSuccess(body -> writeNonStreamSuccess(context, body, target.publicModelCode(),
+                        lease, leaseCompleted))
+                .onFailure(throwable -> {
+                    completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
+                    GatewayDataPlaneResponses.writeError(context, 502,
+                            "upstream_protocol_error", "Upstream protocol error");
+                });
     }
 
-    private void writeNonStreamSuccess(RoutingContext context, Buffer body, String publicModelCode) {
+    private void writeNonStreamSuccess(RoutingContext context, Buffer body, String publicModelCode,
+                                       GatewayRuntimeLease lease, AtomicBoolean leaseCompleted) {
         try {
             io.vertx.core.json.JsonObject json = new io.vertx.core.json.JsonObject(body);
             json.put("model", publicModelCode);
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.SUCCESS);
             context.response()
                     .setStatusCode(200)
                     .putHeader("content-type", GatewayDataPlaneResponses.JSON_CONTENT_TYPE)
                     .end(json.encode());
         } catch (RuntimeException e) {
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
             GatewayDataPlaneResponses.writeError(context, 502,
                     "upstream_protocol_error", "Upstream protocol error");
         }
     }
 
     private void handleStreamResponse(RoutingContext context, HttpClientRequest request,
-                                      HttpClientResponse response, GatewayOpenAiExecutionTarget target) {
+                                      HttpClientResponse response, GatewayOpenAiExecutionTarget target,
+                                      GatewayRuntimeLease lease, AtomicBoolean leaseCompleted) {
         if (!isSuccess(response.statusCode())) {
-            handleUpstreamError(context, request, response);
+            handleUpstreamError(context, request, response, lease, leaseCompleted);
             return;
         }
         if (!isEventStream(response.getHeader("Content-Type"))) {
             request.cancel();
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
             GatewayDataPlaneResponses.writeError(context, 502,
                     "upstream_protocol_error", "Upstream protocol error");
             return;
@@ -125,6 +148,11 @@ class GatewayOpenAiDirectExecutor {
         GatewayOpenAiSseModelRewriter rewriter = new GatewayOpenAiSseModelRewriter(target.publicModelCode(),
                 executionRuntime.config().openAiMaxSseEventBytes());
         AtomicBoolean closed = new AtomicBoolean(false);
+        long renewTimerId = governanceRuntime.startRenewing(lease, () -> {
+            request.cancel();
+            safeEndStream(context, closed);
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.LEASE_LOST);
+        });
         context.response()
                 .setStatusCode(200)
                 .setChunked(true)
@@ -134,8 +162,14 @@ class GatewayOpenAiDirectExecutor {
                 .closeHandler(ignored -> {
                     closed.set(true);
                     request.cancel();
+                    governanceRuntime.cancelRenewing(renewTimerId);
+                    completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.CLIENT_CANCELLED);
                 });
-        response.exceptionHandler(throwable -> safeEndStream(context, closed));
+        response.exceptionHandler(throwable -> {
+            governanceRuntime.cancelRenewing(renewTimerId);
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
+            safeEndStream(context, closed);
+        });
         response.handler(chunk -> {
             if (closed.get()) {
                 return;
@@ -147,6 +181,8 @@ class GatewayOpenAiDirectExecutor {
                 applyBackpressure(context, response);
             } catch (GatewayOpenAiSseException e) {
                 request.cancel();
+                governanceRuntime.cancelRenewing(renewTimerId);
+                completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
                 safeEndStream(context, closed);
             }
         });
@@ -160,7 +196,13 @@ class GatewayOpenAiDirectExecutor {
                 }
             } catch (GatewayOpenAiSseException e) {
                 request.cancel();
+                governanceRuntime.cancelRenewing(renewTimerId);
+                completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
+                safeEndStream(context, closed);
+                return;
             }
+            governanceRuntime.cancelRenewing(renewTimerId);
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.SUCCESS);
             safeEndStream(context, closed);
         });
     }
@@ -178,10 +220,12 @@ class GatewayOpenAiDirectExecutor {
         }
     }
 
-    private void handleUpstreamError(RoutingContext context, HttpClientRequest request, HttpClientResponse response) {
+    private void handleUpstreamError(RoutingContext context, HttpClientRequest request, HttpClientResponse response,
+                                     GatewayRuntimeLease lease, AtomicBoolean leaseCompleted) {
         readLimited(response, request, executionRuntime.config().openAiMaxErrorResponseBytes())
                 .onComplete(ignored -> {
                     UpstreamError mapped = mapUpstreamStatus(response.statusCode());
+                    completeLease(lease, leaseCompleted, mapped.outcome());
                     GatewayDataPlaneResponses.writeError(context, mapped.statusCode(), mapped.code(), mapped.message());
                 });
     }
@@ -216,31 +260,46 @@ class GatewayOpenAiDirectExecutor {
         return promise.future();
     }
 
-    private void writeTransportFailure(RoutingContext context, Throwable throwable) {
+    private void writeTransportFailure(RoutingContext context, Throwable throwable,
+                                       GatewayRuntimeLease lease, AtomicBoolean leaseCompleted) {
         String message = throwable == null ? "" : String.valueOf(throwable.getMessage()).toLowerCase(Locale.ROOT);
         if (message.contains("timeout")) {
+            completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_TIMEOUT);
             GatewayDataPlaneResponses.writeError(context, 504,
                     "upstream_timeout", "Upstream timeout");
             return;
         }
+        completeLease(lease, leaseCompleted, GatewayRuntimeLeaseOutcome.UPSTREAM_CONNECTION_FAILURE);
         GatewayDataPlaneResponses.writeError(context, 502,
                 "upstream_connection_error", "Upstream connection error");
     }
 
     private UpstreamError mapUpstreamStatus(int statusCode) {
         if (statusCode == 401 || statusCode == 403) {
-            return new UpstreamError(502, "upstream_authentication_failed", "Upstream authentication failed");
+            return new UpstreamError(502, "upstream_authentication_failed",
+                    "Upstream authentication failed", GatewayRuntimeLeaseOutcome.UPSTREAM_AUTH_FAILURE);
         }
         if (statusCode == 429) {
-            return new UpstreamError(429, "upstream_rate_limited", "Upstream rate limited");
+            return new UpstreamError(429, "upstream_rate_limited",
+                    "Upstream rate limited", GatewayRuntimeLeaseOutcome.UPSTREAM_RATE_LIMITED);
         }
         if (statusCode == 400 || statusCode == 404 || statusCode == 409 || statusCode == 422) {
-            return new UpstreamError(400, "upstream_rejected_request", "Upstream rejected request");
+            return new UpstreamError(400, "upstream_rejected_request",
+                    "Upstream rejected request", GatewayRuntimeLeaseOutcome.REACHABLE_CLIENT_REJECTION);
         }
         if (statusCode >= 500) {
-            return new UpstreamError(502, "upstream_server_error", "Upstream server error");
+            return new UpstreamError(502, "upstream_server_error",
+                    "Upstream server error", GatewayRuntimeLeaseOutcome.UPSTREAM_SERVER_FAILURE);
         }
-        return new UpstreamError(502, "upstream_protocol_error", "Upstream protocol error");
+        return new UpstreamError(502, "upstream_protocol_error",
+                "Upstream protocol error", GatewayRuntimeLeaseOutcome.UPSTREAM_PROTOCOL_FAILURE);
+    }
+
+    private void completeLease(GatewayRuntimeLease lease, AtomicBoolean completed,
+                               GatewayRuntimeLeaseOutcome outcome) {
+        if (completed.compareAndSet(false, true)) {
+            governanceRuntime.complete(lease, outcome);
+        }
     }
 
     private boolean isSuccess(int statusCode) {
@@ -255,6 +314,7 @@ class GatewayOpenAiDirectExecutor {
         return contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("text/event-stream");
     }
 
-    private record UpstreamError(int statusCode, String code, String message) {
+    private record UpstreamError(int statusCode, String code, String message,
+                                 GatewayRuntimeLeaseOutcome outcome) {
     }
 }

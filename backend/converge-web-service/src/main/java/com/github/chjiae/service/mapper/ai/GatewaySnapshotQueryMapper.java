@@ -11,6 +11,7 @@ import com.github.chjiae.service.service.ai.GatewaySnapshotPublicModelRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotResourcePoolRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotRoutePolicyRow;
 import com.github.chjiae.service.service.ai.GatewaySnapshotRouteTargetRow;
+import com.github.chjiae.service.service.ai.GatewaySnapshotRuntimePolicyRow;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
@@ -116,4 +117,12 @@ public interface GatewaySnapshotQueryMapper {
      * @return 绑定快照行
      */
     List<GatewaySnapshotClientApiKeyAccessGroupRow> selectClientApiKeyAccessGroups(@Param("tenantId") Long tenantId);
+
+    /**
+     * 查询租户内执行资源运行时治理策略。
+     *
+     * @param tenantId 租户 ID
+     * @return 运行时治理策略快照行
+     */
+    List<GatewaySnapshotRuntimePolicyRow> selectExecutionResourceRuntimePolicies(@Param("tenantId") Long tenantId);
 }

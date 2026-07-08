@@ -1,6 +1,7 @@
 package com.github.chjiae.gateway;
 
 import com.github.chjiae.contract.gateway.GatewayExecutionResourceSnapshot;
+import com.github.chjiae.contract.gateway.GatewayExecutionResourceRuntimePolicySnapshot;
 import com.github.chjiae.contract.gateway.GatewayPublicModelSnapshot;
 import com.github.chjiae.contract.gateway.GatewaySecretEnvelope;
 import com.github.chjiae.contract.gateway.GatewaySnapshotChangedEvent;
@@ -175,7 +176,23 @@ class GatewaySnapshotRuntimeTest {
                         "OPENAI",
                         "OPENAI_COMPATIBLE",
                         "https://api.example.test/v1/",
-                        envelope))
+                        envelope)),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new GatewayExecutionResourceRuntimePolicySnapshot(tenantId,
+                        "runtime-policy-" + tenantId,
+                        "resource-" + tenantId,
+                        1,
+                        0,
+                        3,
+                        60000,
+                        30000,
+                        30000))
         );
 
         byte[] payloadBytes = GatewaySnapshotJson.toBytes(snapshot);

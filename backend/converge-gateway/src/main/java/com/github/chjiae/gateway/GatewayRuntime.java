@@ -2,6 +2,7 @@ package com.github.chjiae.gateway;
 
 import com.github.chjiae.gateway.config.GatewayConfig;
 import com.github.chjiae.gateway.execution.GatewayExecutionRuntime;
+import com.github.chjiae.gateway.governance.GatewayRuntimeGovernanceRuntime;
 import com.github.chjiae.gateway.http.GatewayRouterFactory;
 import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
 import io.vertx.core.Future;
@@ -52,6 +53,9 @@ public class GatewayRuntime {
 
     /** 网关上游执行运行时 */
     private GatewayExecutionRuntime executionRuntime;
+
+    /** 网关运行时治理运行时 */
+    private GatewayRuntimeGovernanceRuntime governanceRuntime;
 
     private GatewayRuntime(Vertx vertx, GatewayConfig config, Instant startedAt, boolean enableTestFailureRoute) {
         this.vertx = vertx;
@@ -127,9 +131,13 @@ public class GatewayRuntime {
         if (executionRuntime != null) {
             executionRuntime.beginDrain();
         }
+        if (governanceRuntime != null) {
+            governanceRuntime.beginDrain();
+        }
 
         closeHttpServer()
                 .compose(ignored -> closeExecutionRuntime())
+                .compose(ignored -> closeGovernanceRuntime())
                 .compose(ignored -> closeSnapshotRuntime())
                 .compose(ignored -> vertx.close())
                 .onComplete(result -> {
@@ -148,13 +156,18 @@ public class GatewayRuntime {
     private Future<GatewayRuntime> startHttpServer() {
         snapshotRuntime = new GatewaySnapshotRuntime(vertx, config.snapshotConfig());
         executionRuntime = new GatewayExecutionRuntime(vertx, config.executionConfig(), config.buildVersion());
+        governanceRuntime = new GatewayRuntimeGovernanceRuntime(vertx, config.snapshotConfig().redisUri(),
+                config.runtimeGovernanceConfig());
         snapshotRuntime.start();
-        Router router = GatewayRouterFactory.create(vertx, config, startedAt,
-                snapshotRuntime, executionRuntime, enableTestFailureRoute);
         Promise<GatewayRuntime> promise = Promise.promise();
-        vertx.createHttpServer()
-                .requestHandler(router)
-                .listen(config.port(), config.host())
+        governanceRuntime.start()
+                .compose(ignored -> {
+                    Router router = GatewayRouterFactory.create(vertx, config, startedAt,
+                            snapshotRuntime, executionRuntime, governanceRuntime, enableTestFailureRoute);
+                    return vertx.createHttpServer()
+                            .requestHandler(router)
+                            .listen(config.port(), config.host());
+                })
                 .onSuccess(startedServer -> {
                     server = startedServer;
                     log.info("网关 HTTP Server 已启动，监听地址: {}:{}，服务名: {}，版本: {}",
@@ -202,6 +215,15 @@ public class GatewayRuntime {
         }
         return executionRuntime.close(Duration.ofMillis(config.shutdownTimeoutMs()))
                 .onFailure(throwable -> log.warn("网关执行运行时关闭异常，将继续释放后续资源", throwable))
+                .recover(throwable -> Future.succeededFuture());
+    }
+
+    private Future<Void> closeGovernanceRuntime() {
+        if (governanceRuntime == null) {
+            return Future.succeededFuture();
+        }
+        return governanceRuntime.close()
+                .onFailure(throwable -> log.warn("网关运行时治理关闭异常，将继续释放后续资源", throwable))
                 .recover(throwable -> Future.succeededFuture());
     }
 

@@ -97,6 +97,49 @@ class GatewaySnapshotContractTest {
     }
 
     @Test
+    void contract_V4运行时策略可序列化且旧V3快照兼容为空策略() {
+        GatewayTenantSnapshot snapshot = new GatewayTenantSnapshot(GatewaySnapshotSchema.VERSION_4,
+                "tenant-1", 9, 1000L,
+                List.of(new GatewayPublicModelSnapshot("tenant-1", "model-1", "gpt-public", "GPT", "gpt")),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new GatewayExecutionResourceRuntimePolicySnapshot("tenant-1",
+                        "policy-runtime-1", "resource-1", 8, 3, 3,
+                        300_000L, 30_000L, 60_000L)));
+
+        String json = GatewaySnapshotJson.toJson(snapshot);
+        GatewayTenantSnapshot parsed = GatewaySnapshotJson.fromJson(json, GatewayTenantSnapshot.class);
+        GatewayTenantSnapshot parsedV3 = GatewaySnapshotJson.fromJson("""
+                {
+                  "schemaVersion": 3,
+                  "tenantId": "tenant-1",
+                  "revision": 8,
+                  "generatedAtEpochMillis": 1000,
+                  "publicModels": [],
+                  "executionResources": [],
+                  "resourcePools": [],
+                  "resourceModelBindings": [],
+                  "routePolicies": [],
+                  "accessGroups": [],
+                  "accessGroupModelGrants": [],
+                  "clientApiKeys": [],
+                  "clientApiKeyAccessGroups": []
+                }
+                """, GatewayTenantSnapshot.class);
+
+        assertThat(GatewaySnapshotSchema.CURRENT_VERSION).isEqualTo(GatewaySnapshotSchema.VERSION_4);
+        assertThat(parsed.executionResourceRuntimePolicies()).hasSize(1);
+        assertThat(parsed.executionResourceRuntimePolicies().getFirst().policyVersion()).isEqualTo(8);
+        assertThat(parsedV3.executionResourceRuntimePolicies()).isEmpty();
+    }
+
+    @Test
     void contract_不依赖禁止的服务框架和存储客户端() throws Exception {
         String pom = Files.readString(Path.of("pom.xml"));
 

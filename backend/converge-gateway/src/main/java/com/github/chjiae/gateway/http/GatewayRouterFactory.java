@@ -2,6 +2,7 @@ package com.github.chjiae.gateway.http;
 
 import com.github.chjiae.gateway.config.GatewayConfig;
 import com.github.chjiae.gateway.execution.GatewayExecutionRuntime;
+import com.github.chjiae.gateway.governance.GatewayRuntimeGovernanceRuntime;
 import com.github.chjiae.gateway.snapshot.GatewaySnapshotRuntime;
 import io.vertx.core.Vertx;
 import io.vertx.ext.web.Router;
@@ -29,12 +30,14 @@ public final class GatewayRouterFactory {
      */
     public static Router create(Vertx vertx, GatewayConfig config, Instant startedAt,
                                 GatewaySnapshotRuntime snapshotRuntime, GatewayExecutionRuntime executionRuntime,
+                                GatewayRuntimeGovernanceRuntime governanceRuntime,
                                 boolean enableTestFailureRoute) {
         Router router = Router.router(vertx);
         InternalStatusHandler internalStatusHandler = new InternalStatusHandler(config, startedAt, snapshotRuntime);
+        GatewayRuntimeStatusHandler runtimeStatusHandler = new GatewayRuntimeStatusHandler(governanceRuntime);
         GatewayModelsHandler modelsHandler = new GatewayModelsHandler(snapshotRuntime);
         GatewayOpenAiChatCompletionsHandler chatHandler =
-                new GatewayOpenAiChatCompletionsHandler(snapshotRuntime, executionRuntime);
+                new GatewayOpenAiChatCompletionsHandler(snapshotRuntime, executionRuntime, governanceRuntime);
 
         router.route().handler(new AccessLogHandler());
         router.route().handler(new RequestIdHandler());
@@ -43,6 +46,7 @@ public final class GatewayRouterFactory {
         router.get("/internal/ready").handler(internalStatusHandler::ready);
         router.get("/internal/version").handler(internalStatusHandler::version);
         router.get("/internal/snapshot-status").handler(internalStatusHandler::snapshotStatus);
+        router.get("/internal/runtime-status").handler(runtimeStatusHandler::handle);
         router.get("/v1/models").handler(modelsHandler::handle);
         router.post("/v1/chat/completions").handler(chatHandler::handle);
 

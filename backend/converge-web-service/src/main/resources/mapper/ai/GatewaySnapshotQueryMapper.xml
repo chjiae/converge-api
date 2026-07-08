@@ -170,4 +170,19 @@
         WHERE tenant_id = #{tenantId}
         ORDER BY id ASC
     </select>
+
+    <select id="selectExecutionResourceRuntimePolicies" resultType="com.github.chjiae.service.service.ai.GatewaySnapshotRuntimePolicyRow">
+        SELECT tenant_id AS tenantId,
+               id AS runtimePolicyId,
+               execution_resource_id AS executionResourceId,
+               policy_version AS policyVersion,
+               max_concurrent_requests AS maxConcurrentRequests,
+               consecutive_failure_threshold AS consecutiveFailureThreshold,
+               failure_reset_after_ms AS failureResetAfterMs,
+               failure_cooldown_ms AS failureCooldownMs,
+               rate_limit_cooldown_ms AS rateLimitCooldownMs
+        FROM ai_execution_resource_runtime_policy
+        WHERE tenant_id = #{tenantId}
+        ORDER BY execution_resource_id ASC
+    </select>
 </mapper>

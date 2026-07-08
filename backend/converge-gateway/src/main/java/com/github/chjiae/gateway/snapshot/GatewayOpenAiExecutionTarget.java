@@ -1,5 +1,7 @@
 package com.github.chjiae.gateway.snapshot;
 
+import com.github.chjiae.contract.gateway.GatewayExecutionResourceRuntimePolicySnapshot;
+
 import java.net.URI;
 
 /**
@@ -32,12 +34,16 @@ public final class GatewayOpenAiExecutionTarget {
     /** 运行时上游 secret */
     private final String runtimeSecret;
 
+    /** 执行资源运行时治理策略 */
+    private final GatewayExecutionResourceRuntimePolicySnapshot runtimePolicy;
+
     /**
      * 创建执行目标。
      */
     public GatewayOpenAiExecutionTarget(String tenantId, String publicModelCode, long snapshotRevision,
                                         String routePolicyId, String executionResourceId, String baseUrl,
-                                        String upstreamModelName, String runtimeSecret) {
+                                        String upstreamModelName, String runtimeSecret,
+                                        GatewayExecutionResourceRuntimePolicySnapshot runtimePolicy) {
         this.tenantId = requireText(tenantId, "租户 ID 不能为空");
         this.publicModelCode = requireText(publicModelCode, "公开模型不能为空");
         this.snapshotRevision = snapshotRevision;
@@ -46,6 +52,10 @@ public final class GatewayOpenAiExecutionTarget {
         this.baseUrl = validateBaseUrl(baseUrl);
         this.upstreamModelName = requireText(upstreamModelName, "上游模型名不能为空");
         this.runtimeSecret = requireText(runtimeSecret, "运行时 secret 不能为空");
+        if (runtimePolicy == null) {
+            throw new IllegalArgumentException("运行时治理策略不能为空");
+        }
+        this.runtimePolicy = runtimePolicy;
     }
 
     /**
@@ -118,6 +128,15 @@ public final class GatewayOpenAiExecutionTarget {
      */
     public String runtimeSecret() {
         return runtimeSecret;
+    }
+
+    /**
+     * 获取运行时治理策略。
+     *
+     * @return 运行时治理策略
+     */
+    public GatewayExecutionResourceRuntimePolicySnapshot runtimePolicy() {
+        return runtimePolicy;
     }
 
     /**
