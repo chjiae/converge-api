@@ -89,6 +89,11 @@ ai:
       active-key-base64: ${AI_CREDENTIAL_ACTIVE_KEY_BASE64:}
       fingerprint-key-base64: ${AI_CREDENTIAL_FINGERPRINT_KEY_BASE64:}
   gateway:
+    admin:
+      enabled: ${AI_GATEWAY_ADMIN_ENABLED:false}
+      base-url: ${AI_GATEWAY_ADMIN_BASE_URL:}
+      connect-timeout-ms: ${AI_GATEWAY_ADMIN_CONNECT_TIMEOUT_MS:1000}
+      read-timeout-ms: ${AI_GATEWAY_ADMIN_READ_TIMEOUT_MS:3000}
     snapshot:
       key-id: ${AI_GATEWAY_SNAPSHOT_KEY_ID:}
       encryption-key-base64: ${AI_GATEWAY_SNAPSHOT_ENCRYPTION_KEY_BASE64:}

@@ -22,6 +22,7 @@ import {
   Shield,
   Bell,
   UserCircle,
+  Bot,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { cn } from '@/lib/utils'
@@ -98,6 +99,7 @@ function buildMenuGroups(isSuperAdmin: boolean, isTenantAdmin: boolean): MenuGro
       items: [
         { label: '用户管理', to: '/console/users', icon: <Users className="size-4" /> },
         { label: '角色管理', to: '/console/roles', icon: <Shield className="size-4" /> },
+        { label: 'AI 网关', to: '/console/ai-gateway', icon: <Bot className="size-4" /> },
       ],
     })
   }

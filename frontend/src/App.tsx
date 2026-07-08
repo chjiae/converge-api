@@ -37,6 +37,7 @@ const SubscriptionRenewPage = lazy(() => import('@/pages/console/subscription-re
 const PaymentResultPage = lazy(() => import('@/pages/payment/payment-result'))
 const NotificationListPage = lazy(() => import('@/pages/console/notification-list'))
 const ProfilePage = lazy(() => import('@/pages/console/profile'))
+const AiGatewayPage = lazy(() => import('@/pages/console/ai-gateway'))
 
 /**
  * 应用入口组件
@@ -85,6 +86,7 @@ function App() {
             <Route element={<RoleGuard allowedRoles={['TENANT_OWNER', 'TENANT_ADMIN']} />}>
               <Route path="/console/users" element={<UserListPage />} />
               <Route path="/console/roles" element={<RoleListPage />} />
+              <Route path="/console/ai-gateway" element={<AiGatewayPage />} />
             </Route>
 
             {/* 所有已登录用户可访问的路由 */}

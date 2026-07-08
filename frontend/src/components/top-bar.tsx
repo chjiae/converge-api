@@ -50,6 +50,7 @@ const BREADCRUMB_MAP: Record<string, string> = {
   'audit-logs': '审计日志',
   users: '用户管理',
   roles: '角色管理',
+  'ai-gateway': 'AI 网关',
   'my-subscriptions': '我的订阅',
   notifications: '通知中心',
   profile: '个人信息',
