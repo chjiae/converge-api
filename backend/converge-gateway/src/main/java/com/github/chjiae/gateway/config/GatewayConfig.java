@@ -148,7 +148,19 @@ public record GatewayConfig(
                         "网关快照最大陈旧时间必须是大于 0 的整数"),
                 (int) parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_HISTORY_RETAIN_COUNT",
                                 "gateway.snapshot.history-retain-count", "3"),
-                        "网关快照历史保留数量必须是大于 0 的整数")
+                        "网关快照历史保留数量必须是大于 0 的整数"),
+                parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_TENANT_REFRESH_DEBOUNCE_MS",
+                                "gateway.snapshot.tenant-refresh-debounce-ms",
+                                String.valueOf(GatewaySnapshotConfig.DEFAULT_TENANT_REFRESH_DEBOUNCE_MS)),
+                        "网关租户快照刷新防抖时间必须是大于 0 的整数"),
+                (int) parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_TENANT_REFRESH_MAX_PENDING",
+                                "gateway.snapshot.tenant-refresh-max-pending",
+                                String.valueOf(GatewaySnapshotConfig.DEFAULT_TENANT_REFRESH_MAX_PENDING)),
+                        "网关租户快照 pending 上限必须是大于 0 的整数"),
+                (int) parsePositiveLong(read(properties, environment, "GATEWAY_SNAPSHOT_MAX_EVENT_BYTES",
+                                "gateway.snapshot.max-event-bytes",
+                                String.valueOf(GatewaySnapshotConfig.DEFAULT_MAX_EVENT_BYTES)),
+                        "网关快照事件字节上限必须是大于 0 的整数")
         );
         GatewayExecutionConfig executionConfig = new GatewayExecutionConfig(
                 parsePositiveLong(read(properties, environment, "GATEWAY_UPSTREAM_CONNECT_TIMEOUT_MS",

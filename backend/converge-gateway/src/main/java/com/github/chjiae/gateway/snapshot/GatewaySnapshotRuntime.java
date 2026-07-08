@@ -10,6 +10,7 @@ import com.github.chjiae.contract.gateway.GatewayClientKeyAuthenticationResult;
 import com.github.chjiae.contract.gateway.GatewayClientKeyCrypto;
 import com.github.chjiae.contract.gateway.GatewayClientPrincipal;
 import com.github.chjiae.contract.gateway.GatewaySnapshotCrypto;
+import com.github.chjiae.contract.gateway.GatewaySnapshotChangedEvent;
 import com.github.chjiae.contract.gateway.GatewaySnapshotJson;
 import com.github.chjiae.contract.gateway.GatewaySnapshotManifest;
 import com.github.chjiae.contract.gateway.GatewaySnapshotRedisKeys;
@@ -47,6 +48,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -76,6 +79,16 @@ public class GatewaySnapshotRuntime {
     private final AtomicReference<Map<String, GatewayClientKeyIndexEntry>> clientKeyIndex =
             new AtomicReference<>(Map.of());
 
+    /** 租户级 Client API Key 索引，用于增量替换全局索引 */
+    private final AtomicReference<Map<String, Map<String, GatewayClientKeyIndexEntry>>> tenantKeyIndexes =
+            new AtomicReference<>(Map.of());
+
+    /** tenant 定向刷新状态 */
+    private final ConcurrentHashMap<String, TenantRefreshState> tenantRefreshStates = new ConcurrentHashMap<>();
+
+    /** 当前 Redis current 快照损坏的租户集合 */
+    private final Set<String> corruptedTenants = ConcurrentHashMap.newKeySet();
+
     /** 命令连接 */
     private RedisConnection commandConnection;
 
@@ -94,6 +107,18 @@ public class GatewaySnapshotRuntime {
     /** 最近成功对账时间 */
     private volatile long lastSuccessfulReconcileEpochMillis;
 
+    /** 最近全量对账时间 */
+    private volatile long lastFullReconcileEpochMillis;
+
+    /** 最近 tenant 定向刷新时间 */
+    private volatile long lastTenantRefreshEpochMillis;
+
+    /** 最近刷新耗时 */
+    private volatile long lastRefreshDurationMs;
+
+    /** 最大刷新耗时 */
+    private final AtomicLong maxRefreshDurationMs = new AtomicLong();
+
     /** 最近 Redis 失败时间 */
     private volatile long lastRedisFailureEpochMillis;
 
@@ -103,6 +128,15 @@ public class GatewaySnapshotRuntime {
     /** 最近错误分类 */
     private volatile String latestErrorCategory;
 
+    /** 快照刷新总次数 */
+    private final AtomicLong snapshotRefreshTotalCount = new AtomicLong();
+
+    /** 快照刷新跳过次数 */
+    private final AtomicLong snapshotRefreshSkippedCount = new AtomicLong();
+
+    /** 快照刷新失败次数 */
+    private final AtomicLong snapshotRefreshFailedCount = new AtomicLong();
+
     /** 静态拓扑验证器 */
     private final StaticTopologyValidator topologyValidator = new StaticTopologyValidator();
 
@@ -111,6 +145,25 @@ public class GatewaySnapshotRuntime {
 
     /** 动态治理候选规划器 */
     private final StaticRouteCandidatePlanner candidatePlanner = new StaticRouteCandidatePlanner();
+
+    /**
+     * tenant 定向刷新状态。
+     * 该对象只保存调度元数据，不保存 payload、Redis key、keyId 或 secret。
+     */
+    private static final class TenantRefreshState {
+
+        /** 是否已有 refresh 在执行 */
+        private boolean inFlight;
+
+        /** 防抖 timer ID，-1 表示无 timer */
+        private long timerId = -1;
+
+        /** in-flight 或 timer 期间看到的最高提示 revision */
+        private long pendingRevision = -1;
+
+        /** 最近一次安全原因分类 */
+        private String reason = "UNKNOWN";
+    }
 
     /**
      * 创建网关快照运行时。
@@ -145,6 +198,15 @@ public class GatewaySnapshotRuntime {
         if (periodicTimerId != -1) {
             vertx.cancelTimer(periodicTimerId);
         }
+        for (TenantRefreshState state : tenantRefreshStates.values()) {
+            synchronized (state) {
+                if (state.timerId != -1) {
+                    vertx.cancelTimer(state.timerId);
+                    state.timerId = -1;
+                }
+            }
+        }
+        tenantRefreshStates.clear();
         List<Future<?>> futures = new ArrayList<>();
         if (subscriberConnection != null) {
             futures.add(subscriberConnection.close());
@@ -174,10 +236,28 @@ public class GatewaySnapshotRuntime {
         int routePlanCount = snapshotMap.values().stream()
                 .mapToInt(loaded -> loaded.routePlans().size())
                 .sum();
+        int loadedAccessGroupCount = snapshotMap.values().stream()
+                .mapToInt(loaded -> loaded.snapshot().accessGroups().size())
+                .sum();
+        int loadedGrantCount = snapshotMap.values().stream()
+                .mapToInt(loaded -> loaded.snapshot().accessGroupModelGrants().size())
+                .sum();
+        int loadedRuntimePolicyCount = snapshotMap.values().stream()
+                .mapToInt(loaded -> loaded.runtimePolicies().size())
+                .sum();
+        long estimatedPayloadBytes = snapshotMap.values().stream()
+                .mapToLong(GatewayLoadedTenantSnapshot::estimatedPayloadBytes)
+                .sum();
         int loadedClientKeyCount = clientKeyIndex.get().size();
         int invalidRouteTenantCount = "STATIC_ROUTE_INVALID".equals(latestErrorCategory) ? 1 : 0;
-        return new GatewaySnapshotRuntimeStatus(syncState(), indexTenantCount, snapshotMap.size(),
-                routePlanCount, loadedClientKeyCount, invalidRouteTenantCount,
+        return new GatewaySnapshotRuntimeStatus(syncState(), indexTenantCount, tenantKeyIndexes.get().size(),
+                snapshotMap.size(), routePlanCount, loadedClientKeyCount,
+                loadedClientKeyCount, loadedAccessGroupCount, loadedGrantCount,
+                routePlanCount, loadedRuntimePolicyCount, invalidRouteTenantCount,
+                snapshotRefreshTotalCount.get(), snapshotRefreshSkippedCount.get(), snapshotRefreshFailedCount.get(),
+                tenantRefreshInFlightCount(), tenantRefreshPendingCount(),
+                lastTenantRefreshEpochMillis, lastFullReconcileEpochMillis,
+                lastRefreshDurationMs, maxRefreshDurationMs.get(), estimatedPayloadBytes,
                 lastSuccessfulReconcileEpochMillis, latestErrorCategory, tenants);
     }
 
@@ -383,20 +463,29 @@ public class GatewaySnapshotRuntime {
      * @param reason 触发原因
      */
     private void reconcileAll(String reason) {
+        long startedAt = System.currentTimeMillis();
+        snapshotRefreshTotalCount.incrementAndGet();
         smembers(GatewaySnapshotRedisKeys.tenantIndexKey())
                 .compose(tenantIds -> {
                     indexTenantCount = tenantIds.size();
+                    corruptedTenants.removeIf(tenantId -> !tenantIds.contains(tenantId));
+                    currentSnapshotCorrupted = !corruptedTenants.isEmpty();
                     return loadAllTenants(tenantIds);
                 })
                 .onSuccess(ignored -> {
                     firstReconcileSucceeded = true;
+                    corruptedTenants.clear();
                     currentSnapshotCorrupted = false;
                     latestErrorCategory = null;
                     lastSuccessfulReconcileEpochMillis = System.currentTimeMillis();
+                    lastFullReconcileEpochMillis = lastSuccessfulReconcileEpochMillis;
+                    recordRefreshDuration(startedAt);
                     log.info("网关快照对账成功，原因: {}，index 租户数: {}，本地租户数: {}",
                             reason, indexTenantCount, localSnapshots.get().size());
                 })
                 .onFailure(throwable -> {
+                    snapshotRefreshFailedCount.incrementAndGet();
+                    recordRefreshDuration(startedAt);
                     if (throwable instanceof GatewaySnapshotValidationException validationException) {
                         currentSnapshotCorrupted = true;
                         latestErrorCategory = validationException.category();
@@ -417,6 +506,7 @@ public class GatewaySnapshotRuntime {
     private Future<Void> loadAllTenants(Set<String> tenantIds) {
         if (tenantIds.isEmpty()) {
             localSnapshots.set(Map.of());
+            tenantKeyIndexes.set(Map.of());
             clientKeyIndex.set(Map.of());
             return Future.succeededFuture();
         }
@@ -437,19 +527,31 @@ public class GatewaySnapshotRuntime {
                                         List<Throwable> failures,
                                         Promise<Void> promise) {
         if (index >= tenantIds.size()) {
-            Map<String, GatewayLoadedTenantSnapshot> immutableNext = Map.copyOf(next);
-            localSnapshots.set(immutableNext);
-            clientKeyIndex.set(buildClientKeyIndex(immutableNext));
-            if (failures.isEmpty()) {
-                promise.complete();
-            } else {
-                promise.fail(failures.getFirst());
+            try {
+                Map<String, GatewayLoadedTenantSnapshot> immutableNext = Map.copyOf(next);
+                Map<String, Map<String, GatewayClientKeyIndexEntry>> nextTenantKeyIndexes =
+                        buildTenantClientKeyIndexes(immutableNext);
+                Map<String, GatewayClientKeyIndexEntry> nextGlobalIndex =
+                        buildGlobalClientKeyIndex(nextTenantKeyIndexes);
+                localSnapshots.set(immutableNext);
+                tenantKeyIndexes.set(nextTenantKeyIndexes);
+                clientKeyIndex.set(nextGlobalIndex);
+                if (failures.isEmpty()) {
+                    promise.complete();
+                } else {
+                    promise.fail(failures.getFirst());
+                }
+            } catch (GatewaySnapshotValidationException e) {
+                currentSnapshotCorrupted = true;
+                latestErrorCategory = e.category();
+                promise.fail(e);
             }
             return;
         }
         String tenantId = tenantIds.get(index);
         loadTenant(tenantId)
                 .onSuccess(loaded -> {
+                    corruptedTenants.remove(tenantId);
                     next.put(tenantId, loaded);
                     loadTenantSequentially(tenantIds, index + 1, current, next, failures, promise);
                 })
@@ -459,6 +561,7 @@ public class GatewaySnapshotRuntime {
                     }
                     failures.add(throwable);
                     if (throwable instanceof GatewaySnapshotValidationException validationException) {
+                        corruptedTenants.add(tenantId);
                         currentSnapshotCorrupted = true;
                         latestErrorCategory = validationException.category();
                     }
@@ -476,13 +579,83 @@ public class GatewaySnapshotRuntime {
         return get(GatewaySnapshotRedisKeys.currentManifestKey(tenantId))
                 .compose(manifestJson -> {
                     if (manifestJson == null || manifestJson.isBlank()) {
-                        return Future.failedFuture(new GatewaySnapshotValidationException("MANIFEST_MISSING",
+                        return Future.<GatewayLoadedTenantSnapshot>failedFuture(new GatewaySnapshotValidationException("MANIFEST_MISSING",
                                 "租户 current manifest 不存在"));
                     }
                     GatewaySnapshotManifest manifest = parseManifest(manifestJson);
                     validateManifest(manifest, tenantId);
                     return get(manifest.payloadRedisKey())
                             .map(payloadJson -> validatePayload(manifest, payloadJson));
+                });
+    }
+
+    /**
+     * 定向刷新单个租户。
+     * event revision 只用于调度去重，最终是否加载以 Redis current manifest 为准。
+     *
+     * @param tenantId 租户 ID
+     * @param hintedRevision Pub/Sub 提示 revision，可为空
+     * @param reason 触发原因
+     * @return 刷新结果
+     */
+    private Future<Void> refreshTenant(String tenantId, Long hintedRevision, String reason) {
+        long startedAt = System.currentTimeMillis();
+        snapshotRefreshTotalCount.incrementAndGet();
+        return get(GatewaySnapshotRedisKeys.currentManifestKey(tenantId))
+                .compose(manifestJson -> {
+                    if (manifestJson == null || manifestJson.isBlank()) {
+                        return Future.failedFuture(new GatewaySnapshotValidationException("MANIFEST_MISSING",
+                                "租户 current manifest 不存在"));
+                    }
+                    GatewaySnapshotManifest manifest = parseManifest(manifestJson);
+                    validateManifest(manifest, tenantId);
+                    long localRevision = localRevision(tenantId);
+                    if (manifest.revision() < localRevision) {
+                        snapshotRefreshSkippedCount.incrementAndGet();
+                        lastTenantRefreshEpochMillis = System.currentTimeMillis();
+                        recordRefreshDuration(startedAt);
+                        log.info("网关快照租户刷新跳过旧 revision，原因: {}，租户: {}，本地 revision: {}，manifest revision: {}",
+                                reason, tenantId, localRevision, manifest.revision());
+                        return Future.<Void>succeededFuture();
+                    }
+                    if (manifest.revision() == localRevision) {
+                        snapshotRefreshSkippedCount.incrementAndGet();
+                        lastTenantRefreshEpochMillis = System.currentTimeMillis();
+                        recordRefreshDuration(startedAt);
+                        log.info("网关快照租户刷新跳过重复 revision，原因: {}，租户: {}，revision: {}",
+                                reason, tenantId, localRevision);
+                        return Future.<Void>succeededFuture();
+                    }
+                    return get(manifest.payloadRedisKey())
+                            .map(payloadJson -> validatePayload(manifest, payloadJson))
+                            .compose(loaded -> {
+                                replaceTenantSnapshot(tenantId, loaded);
+                                corruptedTenants.remove(tenantId);
+                                currentSnapshotCorrupted = !corruptedTenants.isEmpty();
+                                if (!currentSnapshotCorrupted) {
+                                    latestErrorCategory = null;
+                                }
+                                lastTenantRefreshEpochMillis = System.currentTimeMillis();
+                                lastSuccessfulReconcileEpochMillis = lastTenantRefreshEpochMillis;
+                                recordRefreshDuration(startedAt);
+                                log.info("网关快照租户刷新成功，原因: {}，租户: {}，提示 revision: {}，加载 revision: {}",
+                                        reason, tenantId, hintedRevision, manifest.revision());
+                                return Future.<Void>succeededFuture();
+                            });
+                })
+                .onFailure(throwable -> {
+                    snapshotRefreshFailedCount.incrementAndGet();
+                    recordRefreshDuration(startedAt);
+                    if (throwable instanceof GatewaySnapshotValidationException validationException) {
+                        corruptedTenants.add(tenantId);
+                        currentSnapshotCorrupted = true;
+                        latestErrorCategory = validationException.category();
+                    } else {
+                        lastRedisFailureEpochMillis = System.currentTimeMillis();
+                        latestErrorCategory = "REDIS_UNAVAILABLE";
+                    }
+                    log.warn("网关快照租户刷新失败，原因: {}，租户: {}，错误分类: {}",
+                            reason, tenantId, latestErrorCategory);
                 });
     }
 
@@ -556,7 +729,7 @@ public class GatewaySnapshotRuntime {
         Map<String, StaticRoutePlan> routePlans = compileRoutePlans(snapshot);
         validateClientAccess(snapshot);
         Map<String, GatewayExecutionResourceRuntimePolicySnapshot> runtimePolicies = validateRuntimePolicies(snapshot);
-        return new GatewayLoadedTenantSnapshot(snapshot, secrets, routePlans, runtimePolicies);
+        return new GatewayLoadedTenantSnapshot(snapshot, secrets, routePlans, runtimePolicies, payloadBytes.length);
     }
 
     /**
@@ -640,60 +813,162 @@ public class GatewaySnapshotRuntime {
     }
 
     /**
-     * 从已验证快照构建全局 Client API Key 索引。
+     * 从已验证快照构建 tenant 级 Client API Key 索引。
+     *
+     * @param snapshots 已加载快照
+     * @return tenantId 到 key index 的映射
      */
-    private Map<String, GatewayClientKeyIndexEntry> buildClientKeyIndex(
+    private Map<String, Map<String, GatewayClientKeyIndexEntry>> buildTenantClientKeyIndexes(
             Map<String, GatewayLoadedTenantSnapshot> snapshots) {
+        Map<String, Map<String, GatewayClientKeyIndexEntry>> indexes = new HashMap<>();
+        for (Map.Entry<String, GatewayLoadedTenantSnapshot> entry : snapshots.entrySet()) {
+            indexes.put(entry.getKey(), buildTenantClientKeyIndex(entry.getValue()));
+        }
+        return Map.copyOf(indexes);
+    }
+
+    /**
+     * 构建单租户 Client API Key 索引。
+     */
+    private Map<String, GatewayClientKeyIndexEntry> buildTenantClientKeyIndex(GatewayLoadedTenantSnapshot loaded) {
+        GatewayTenantSnapshot snapshot = loaded.snapshot();
+        if (snapshot.schemaVersion() < GatewaySnapshotSchema.VERSION_3) {
+            return Map.of();
+        }
         Map<String, GatewayClientKeyIndexEntry> nextIndex = new HashMap<>();
-        for (GatewayLoadedTenantSnapshot loaded : snapshots.values()) {
-            GatewayTenantSnapshot snapshot = loaded.snapshot();
-            if (snapshot.schemaVersion() < GatewaySnapshotSchema.VERSION_3) {
-                continue;
+        Map<String, GatewayAccessGroupSnapshot> enabledGroups = new HashMap<>();
+        for (GatewayAccessGroupSnapshot group : snapshot.accessGroups()) {
+            if ("ENABLED".equals(group.adminStatus())) {
+                enabledGroups.put(group.accessGroupId(), group);
             }
-            Map<String, GatewayAccessGroupSnapshot> enabledGroups = new HashMap<>();
-            for (GatewayAccessGroupSnapshot group : snapshot.accessGroups()) {
-                if ("ENABLED".equals(group.adminStatus())) {
-                    enabledGroups.put(group.accessGroupId(), group);
-                }
+        }
+        Map<String, List<GatewayAccessGroupModelGrantSnapshot>> grantsByGroup = new HashMap<>();
+        for (GatewayAccessGroupModelGrantSnapshot grant : snapshot.accessGroupModelGrants()) {
+            if ("ENABLED".equals(grant.adminStatus()) && enabledGroups.containsKey(grant.accessGroupId())) {
+                grantsByGroup.computeIfAbsent(grant.accessGroupId(), ignored -> new ArrayList<>()).add(grant);
             }
-            Map<String, List<GatewayAccessGroupModelGrantSnapshot>> grantsByGroup = new HashMap<>();
-            for (GatewayAccessGroupModelGrantSnapshot grant : snapshot.accessGroupModelGrants()) {
-                if ("ENABLED".equals(grant.adminStatus()) && enabledGroups.containsKey(grant.accessGroupId())) {
-                    grantsByGroup.computeIfAbsent(grant.accessGroupId(), ignored -> new ArrayList<>()).add(grant);
-                }
+        }
+        Map<String, List<String>> groupsByKey = new HashMap<>();
+        for (GatewayClientApiKeyAccessGroupSnapshot binding : snapshot.clientApiKeyAccessGroups()) {
+            if ("ENABLED".equals(binding.adminStatus()) && enabledGroups.containsKey(binding.accessGroupId())) {
+                groupsByKey.computeIfAbsent(binding.clientApiKeyId(), ignored -> new ArrayList<>())
+                        .add(binding.accessGroupId());
             }
-            Map<String, List<String>> groupsByKey = new HashMap<>();
-            for (GatewayClientApiKeyAccessGroupSnapshot binding : snapshot.clientApiKeyAccessGroups()) {
-                if ("ENABLED".equals(binding.adminStatus()) && enabledGroups.containsKey(binding.accessGroupId())) {
-                    groupsByKey.computeIfAbsent(binding.clientApiKeyId(), ignored -> new ArrayList<>())
-                            .add(binding.accessGroupId());
-                }
+        }
+        for (GatewayClientApiKeySnapshot key : snapshot.clientApiKeys()) {
+            List<String> groupIds = groupsByKey.getOrDefault(key.clientApiKeyId(), List.of()).stream()
+                    .sorted()
+                    .toList();
+            List<GatewayAccessGroupModelGrantSnapshot> grants = new ArrayList<>();
+            for (String groupId : groupIds) {
+                grants.addAll(grantsByGroup.getOrDefault(groupId, List.of()));
             }
-            for (GatewayClientApiKeySnapshot key : snapshot.clientApiKeys()) {
-                List<String> groupIds = groupsByKey.getOrDefault(key.clientApiKeyId(), List.of()).stream()
-                        .sorted()
-                        .toList();
-                List<GatewayAccessGroupModelGrantSnapshot> grants = new ArrayList<>();
-                for (String groupId : groupIds) {
-                    grants.addAll(grantsByGroup.getOrDefault(groupId, List.of()));
-                }
-                List<GatewayAccessGroupModelGrantSnapshot> sortedGrants = grants.stream()
-                        .sorted(Comparator.comparing(GatewayAccessGroupModelGrantSnapshot::publicModelCode)
-                                .thenComparing(GatewayAccessGroupModelGrantSnapshot::canonicalOperation))
-                        .toList();
-                GatewayClientPrincipal principal = new GatewayClientPrincipal(snapshot.tenantId(),
-                        key.clientApiKeyId(), key.keyId(), groupIds, sortedGrants);
-                GatewayClientKeyIndexEntry entry = new GatewayClientKeyIndexEntry(key.keyId(), key.adminStatus(),
-                        key.keyVersion(),
-                        decodeVerifierBytes(key.secretVerifierSaltBase64(), GatewayClientKeyCrypto.SALT_BYTES,
-                                "CLIENT_ACCESS_INVALID"),
-                        decodeVerifierBytes(key.secretVerifierHashBase64(), GatewayClientKeyCrypto.HASH_BYTES,
-                                "CLIENT_ACCESS_INVALID"),
-                        key.expiresAtEpochMillis(), principal);
-                nextIndex.put(key.keyId(), entry);
+            List<GatewayAccessGroupModelGrantSnapshot> sortedGrants = grants.stream()
+                    .sorted(Comparator.comparing(GatewayAccessGroupModelGrantSnapshot::publicModelCode)
+                            .thenComparing(GatewayAccessGroupModelGrantSnapshot::canonicalOperation))
+                    .toList();
+            GatewayClientPrincipal principal = new GatewayClientPrincipal(snapshot.tenantId(),
+                    key.clientApiKeyId(), key.keyId(), groupIds, sortedGrants);
+            GatewayClientKeyIndexEntry entry = new GatewayClientKeyIndexEntry(key.keyId(), key.adminStatus(),
+                    key.keyVersion(),
+                    decodeVerifierBytes(key.secretVerifierSaltBase64(), GatewayClientKeyCrypto.SALT_BYTES,
+                            "CLIENT_ACCESS_INVALID"),
+                    decodeVerifierBytes(key.secretVerifierHashBase64(), GatewayClientKeyCrypto.HASH_BYTES,
+                            "CLIENT_ACCESS_INVALID"),
+                    key.expiresAtEpochMillis(), principal);
+            if (nextIndex.put(key.keyId(), entry) != null) {
+                throw new GatewaySnapshotValidationException("CLIENT_KEY_DUPLICATE",
+                        "同租户 Client API Key 索引重复");
             }
         }
         return Map.copyOf(nextIndex);
+    }
+
+    /**
+     * 从 tenant key index 构建全局 Client API Key 索引，并显式拒绝跨租户 keyId 冲突。
+     */
+    private Map<String, GatewayClientKeyIndexEntry> buildGlobalClientKeyIndex(
+            Map<String, Map<String, GatewayClientKeyIndexEntry>> indexes) {
+        Map<String, GatewayClientKeyIndexEntry> nextIndex = new HashMap<>();
+        for (Map.Entry<String, Map<String, GatewayClientKeyIndexEntry>> tenantEntry : indexes.entrySet()) {
+            for (GatewayClientKeyIndexEntry keyEntry : tenantEntry.getValue().values()) {
+                GatewayClientKeyIndexEntry previous = nextIndex.put(keyEntry.keyId(), keyEntry);
+                if (previous != null && !previous.principal().tenantId().equals(keyEntry.principal().tenantId())) {
+                    throw new GatewaySnapshotValidationException("CLIENT_KEY_DUPLICATE",
+                            "跨租户 Client API Key 索引重复");
+                }
+            }
+        }
+        return Map.copyOf(nextIndex);
+    }
+
+    /**
+     * 增量替换单个 tenant 的本地快照和 Client API Key 索引。
+     */
+    private void replaceTenantSnapshot(String tenantId, GatewayLoadedTenantSnapshot loaded) {
+        Map<String, GatewayLoadedTenantSnapshot> nextSnapshots = new HashMap<>(localSnapshots.get());
+        nextSnapshots.put(tenantId, loaded);
+
+        Map<String, Map<String, GatewayClientKeyIndexEntry>> currentTenantIndexes = tenantKeyIndexes.get();
+        Map<String, GatewayClientKeyIndexEntry> nextTenantIndex = buildTenantClientKeyIndex(loaded);
+        Map<String, Map<String, GatewayClientKeyIndexEntry>> nextTenantIndexes = new HashMap<>(currentTenantIndexes);
+        nextTenantIndexes.put(tenantId, nextTenantIndex);
+        Map<String, Map<String, GatewayClientKeyIndexEntry>> immutableTenantIndexes = Map.copyOf(nextTenantIndexes);
+        Map<String, GatewayClientKeyIndexEntry> nextGlobalIndex = buildGlobalClientKeyIndex(immutableTenantIndexes);
+
+        localSnapshots.set(Map.copyOf(nextSnapshots));
+        tenantKeyIndexes.set(immutableTenantIndexes);
+        clientKeyIndex.set(nextGlobalIndex);
+    }
+
+    /**
+     * 获取本地租户 revision，不存在时返回 0。
+     */
+    private long localRevision(String tenantId) {
+        GatewayLoadedTenantSnapshot loaded = localSnapshots.get().get(tenantId);
+        if (loaded == null) {
+            return 0L;
+        }
+        return loaded.snapshot().revision();
+    }
+
+    /**
+     * 记录刷新耗时。
+     */
+    private void recordRefreshDuration(long startedAt) {
+        long duration = Math.max(0, System.currentTimeMillis() - startedAt);
+        lastRefreshDurationMs = duration;
+        maxRefreshDurationMs.updateAndGet(previous -> Math.max(previous, duration));
+    }
+
+    /**
+     * 统计 tenant refresh 运行中数量。
+     */
+    private int tenantRefreshInFlightCount() {
+        int count = 0;
+        for (TenantRefreshState state : tenantRefreshStates.values()) {
+            synchronized (state) {
+                if (state.inFlight) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 统计 tenant refresh pending 数量。
+     */
+    private int tenantRefreshPendingCount() {
+        int count = 0;
+        for (TenantRefreshState state : tenantRefreshStates.values()) {
+            synchronized (state) {
+                if (state.pendingRevision > 0 || state.timerId != -1) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     private byte[] decodeVerifierBytes(String value, int expectedLength, String category) {
@@ -715,7 +990,7 @@ public class GatewaySnapshotRuntime {
         redis.connect()
                 .onSuccess(connection -> {
                     subscriberConnection = connection;
-                    connection.handler(response -> reconcileAll("PUBSUB"));
+                    connection.handler(this::handlePubSubResponse);
                     connection.exceptionHandler(throwable -> scheduleSubscriptionReconnect());
                     connection.endHandler(ignored -> scheduleSubscriptionReconnect());
                     connection.send(Request.cmd(Command.SUBSCRIBE).arg(GatewaySnapshotRedisKeys.changedChannel()));
@@ -724,6 +999,136 @@ public class GatewaySnapshotRuntime {
                     latestErrorCategory = "REDIS_UNAVAILABLE";
                     scheduleSubscriptionReconnect();
                 });
+    }
+
+    /**
+     * 处理 Redis Pub/Sub 响应。
+     * 合法 changed event 只调度目标 tenant 定向刷新，非法事件不触发全量对账。
+     */
+    private void handlePubSubResponse(Response response) {
+        try {
+            List<String> parts = new ArrayList<>();
+            if (response != null) {
+                for (Response item : response) {
+                    parts.add(item.toString());
+                }
+            }
+            if (parts.size() < 3 || !"message".equalsIgnoreCase(parts.get(0))) {
+                return;
+            }
+            String payload = parts.get(2);
+            if (payload == null || payload.getBytes(StandardCharsets.UTF_8).length > config.maxEventBytes()) {
+                latestErrorCategory = "PUBSUB_EVENT_TOO_LARGE";
+                snapshotRefreshFailedCount.incrementAndGet();
+                log.warn("网关快照 Pub/Sub 事件被忽略，错误分类: {}", latestErrorCategory);
+                return;
+            }
+            GatewaySnapshotChangedEvent event = parseChangedEvent(payload);
+            validateChangedEvent(event);
+            scheduleTenantRefresh(event.tenantId(), event.revision(), "PUBSUB");
+        } catch (GatewaySnapshotValidationException e) {
+            latestErrorCategory = e.category();
+            snapshotRefreshFailedCount.incrementAndGet();
+            log.warn("网关快照 Pub/Sub 事件被忽略，错误分类: {}", latestErrorCategory);
+        } catch (Exception e) {
+            latestErrorCategory = "PUBSUB_EVENT_INVALID";
+            snapshotRefreshFailedCount.incrementAndGet();
+            log.warn("网关快照 Pub/Sub 事件被忽略，错误分类: {}", latestErrorCategory);
+        }
+    }
+
+    /**
+     * 解析 changed event。
+     */
+    private GatewaySnapshotChangedEvent parseChangedEvent(String payload) {
+        try {
+            return GatewaySnapshotJson.fromJson(payload, GatewaySnapshotChangedEvent.class);
+        } catch (Exception e) {
+            throw new GatewaySnapshotValidationException("PUBSUB_EVENT_JSON_INVALID",
+                    "Pub/Sub changed event JSON 不合法");
+        }
+    }
+
+    /**
+     * 校验 changed event 元数据。
+     */
+    private void validateChangedEvent(GatewaySnapshotChangedEvent event) {
+        if (event.schemaVersion() < GatewaySnapshotSchema.MIN_SUPPORTED_VERSION
+                || event.schemaVersion() > GatewaySnapshotSchema.MAX_SUPPORTED_VERSION
+                || event.tenantId() == null
+                || event.tenantId().isBlank()
+                || event.revision() <= 0
+                || event.publishedAtEpochMillis() <= 0
+                || !GatewaySnapshotRedisKeys.currentManifestKey(event.tenantId()).equals(event.manifestRedisKey())) {
+            throw new GatewaySnapshotValidationException("PUBSUB_EVENT_INVALID",
+                    "Pub/Sub changed event 元数据不合法");
+        }
+    }
+
+    /**
+     * 调度 tenant 定向刷新，同租户并发事件通过 single-flight 和 debounce 合并。
+     */
+    private void scheduleTenantRefresh(String tenantId, long hintedRevision, String reason) {
+        if (tenantRefreshStates.size() >= config.tenantRefreshMaxPending()
+                && !tenantRefreshStates.containsKey(tenantId)) {
+            latestErrorCategory = "TENANT_REFRESH_PENDING_OVERFLOW";
+            snapshotRefreshFailedCount.incrementAndGet();
+            log.warn("网关快照租户刷新被忽略，错误分类: {}", latestErrorCategory);
+            return;
+        }
+        TenantRefreshState state = tenantRefreshStates.computeIfAbsent(tenantId, ignored -> new TenantRefreshState());
+        synchronized (state) {
+            state.pendingRevision = Math.max(state.pendingRevision, hintedRevision);
+            state.reason = reason;
+            if (state.inFlight || state.timerId != -1) {
+                return;
+            }
+            state.timerId = vertx.setTimer(config.tenantRefreshDebounceMs(),
+                    ignored -> startTenantRefresh(tenantId));
+        }
+    }
+
+    /**
+     * 开始执行 tenant refresh。
+     */
+    private void startTenantRefresh(String tenantId) {
+        TenantRefreshState state = tenantRefreshStates.get(tenantId);
+        if (state == null) {
+            return;
+        }
+        long hintedRevision;
+        String reason;
+        synchronized (state) {
+            state.timerId = -1;
+            state.inFlight = true;
+            hintedRevision = state.pendingRevision;
+            reason = state.reason;
+            state.pendingRevision = -1;
+        }
+        refreshTenant(tenantId, hintedRevision > 0 ? hintedRevision : null, reason)
+                .onComplete(ignored -> finishTenantRefresh(tenantId));
+    }
+
+    /**
+     * 完成 tenant refresh 后按 pending revision 决定是否继续刷新。
+     */
+    private void finishTenantRefresh(String tenantId) {
+        TenantRefreshState state = tenantRefreshStates.get(tenantId);
+        if (state == null) {
+            return;
+        }
+        synchronized (state) {
+            state.inFlight = false;
+            long localRevision = localRevision(tenantId);
+            if (state.pendingRevision > localRevision) {
+                state.timerId = vertx.setTimer(config.tenantRefreshDebounceMs(),
+                        ignored -> startTenantRefresh(tenantId));
+                return;
+            }
+            if (state.timerId == -1) {
+                tenantRefreshStates.remove(tenantId, state);
+            }
+        }
     }
 
     /**
